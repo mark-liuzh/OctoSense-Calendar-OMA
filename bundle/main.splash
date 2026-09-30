@@ -46,6 +46,28 @@
 //     别指望把 Label 的 height 写小来省地方。
 //     验证手段：改完布局后用 `/d` dump 布局树，**看兄弟节点的实测 r 高度**，
 //     而不是看自己写了多少（`tools/e2e.py dump` + `zoom.py` 截图回读像素）。
+//
+// ⚠️⚠️ **ButtonFlat 必须显式写 color_focus，否则点一下按钮就「消失」**（血泪，2026-09-30，第三个坑）：
+//     现象：点一下「节日 中国」，它整块变白（看着像凭空消失），鼠标移上去又出现；
+//           黑底的「导入」按钮点一下会变成白色。用户报的就是这个。
+//     根因（读 makepad 源码 widgets/src/button.rs 确认）：
+//       ① `handle_event` 的 `Hit::FingerDown` 会 `cx.set_key_focus(...)`
+//          （受 `self.grab_key_focus` 控制，那是 Rust 私有字段，脚本改不了）；
+//       ② shader 的填充色是**四个状态混色**出来的：
+//            fill = color.mix(color_focus, focus)
+//                        .mix(color_hover, hover)
+//                        .mix(color_down,  down)
+//                        .mix(color_disabled, disabled)
+//       ③ 我们只写了 color / color_hover / color_down，**没写 color_focus**
+//          → 按钮一被点就带上键盘焦点（focus=1），填充色落到主题默认的
+//            `theme.color_outset_focus`（浅色）—— 浅底按钮看着「消失」，
+//            深底按钮看着「变白」。描边与文字同理
+//            （`border_color_focus` / `draw_text.color_focus`）。
+//     结论：**每个 ButtonFlat 都要写 color_focus（取和 color 同值）
+//           + border_color_focus + draw_text.color_focus**，让「获得焦点」不改变外观。
+//           全项目 16 个按钮已于 2026-09-30 补齐，新增按钮必须照做。
+//     验证手段：点一下按钮 → 用 `/m?k=move` 把指针移到别处 → `/g?raw=1` 截图 →
+//               `tools/zoom.py` 回读按钮中心像素，应**仍等于 color** 而不是 #ffffff。
 
 // 设计语言色板（集中一处，方便整体调色）
 // ⚠️ 必须在文件最前面声明：Splash 是顺序执行，函数体内引用全局变量是运行时求值，
@@ -1571,6 +1593,19 @@ fn cn_festival_on(y, m, d) {
 }
 
 
+// 格子里显示的节日名。
+//   为什么需要它：CN_SPANS 里 2025 年那组叫「国庆中秋」（4 个字），
+//   直接画进格子会被裁成「国庆中秂」—— 实测 2025-10 就是这样。
+//   格子内容宽 ≈52px，4 个汉字 @9px ≈ 49px，再加绿点(3.5)+间距(2) 就超了。
+//   超过 3 字时取前 2 字（假期主体是国庆，信息不丢）；3 字及以内原样保留
+//   （劳动节/中秋节都放得下）。**不动 CN_SPANS 常量** —— 说明行的
+//   「国庆中秋 10/1」还要用全名，那里宽度够。
+fn cell_fest_name(n) {
+    if n.len() > 3 { return substr(n, 0, 2) }
+    return n
+}
+
+
 // 国际节日：固定公历日期，MMDD 精确匹配。索引同样必须 ipart 过。
 fn intl_festival_on(m, d) {
     let parts = INTL_FIXED.split("|")
@@ -1751,6 +1786,16 @@ fn cal_cells() {
         //   调休上班写个『班』字」。国际节日（妇女节/万圣节…）与国内无关，
         //   不放假，所以只能是小黑点。
         let fest = false
+        // fname: 放假日对应的节日名，直接写成格子里的绿色小字（见标记行）。
+        //   ★ 跟着 hol 走：hol 由 holiday_kind() 给出，而它第一句就是
+        //     `if !cn_holiday_shown() { return 0 }` —— 也就是说**切到「仅国际」时
+        //     绿点与绿字一起消失**。这是刻意的：用户主动选择「只看国际」，
+        //     却还留着国内放假的标记，等于切了个寂寞（与 fest_line 让位同理）。
+        //     一致性要求：绿点(hol==1)与绿字(fname!="")必须同进同退，
+        //     所以 fname 的赋值条件就是 hol == 1，不能另立判据。
+        //   用 cn_festival_on 而不是 festival_on 取名字：后者受「国际节日」
+        //     那一半模式影响，在「全部」模式下取不到国庆/中秋的名字。
+        let fname = ""
         if dnum >= 1 && dnum <= dim {
             txt = "" + dnum
             kind = 1
@@ -1758,13 +1803,14 @@ fn cal_cells() {
             if marks.search(" " + cell8 + " ") >= 0 { dot = true }
             if cell8 == today8 { kind = 2 }
             hol = holiday_kind(y, m, dnum)
+            if hol == 1 { fname = cell_fest_name(cn_festival_on(y, m, dnum)) }
             if hol == 0 && festival_on(y, m, dnum) != "" { fest = true }
         } else if dnum < 1 {
             txt = "" + (pdim + dnum)
         } else {
             txt = "" + (dnum - dim)
         }
-        out.push({ txt: txt, kind: kind, dot: dot, hol: hol, fest: fest })
+        out.push({ txt: txt, kind: kind, dot: dot, hol: hol, fest: fest, fname: fname })
     }
     return out
 }
@@ -2028,8 +2074,8 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             Label{width: Fill text: "OCTOSENSE CALENDAR" draw_text.color: c_accent
                 draw_text.text_style: theme.font_code{font_size: 10}}
             ButtonFlat{text: "关于" height: 20.0 padding: Inset{left: 0 right: 0} on_click: || toggle_about()
-                draw_bg +: {border_radius: 0.0 color: c_card color_hover: c_card color_down: c_card border_size: 0.0}
-                draw_text +: {color: c_ink3 color_hover: c_ink2 color_down: c_ink2 color_hover: c_ink2}}
+                draw_bg +: {border_radius: 0.0 color: c_card color_hover: c_card color_down: c_card color_focus: c_card border_size: 0.0}
+                draw_text +: {color: c_ink3 color_hover: c_ink2 color_down: c_ink2 color_focus: c_ink3}}
         }
         // .head h1{27px/600 letter-spacing:-.015em}
         // ⚠️⚠️ 血泪（2026-09-30）：`text:` 里的表达式是**建树时求值一次**，
@@ -2082,19 +2128,22 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             fest_btn := ButtonFlat{text: "节日 中国" height: H_NAV margin: Inset{right: 6}
                 padding: Inset{left: 8 right: 8} on_click: || cycle_festival_mode()
                 draw_bg +: {border_radius: 6.0 color: c_accent_s color_hover: c_accent_s color_down: c_accent_s
-                    border_size: 1.0 border_color: #xf0d9c9}
-                draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent
+                    color_focus: c_accent_s border_size: 1.0 border_color: #xf0d9c9 border_color_focus: #xf0d9c9}
+                draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
                     color_disabled: c_ink3 text_style: theme.font_regular{font_size: 10}}}
             // .nav button{26x24 radius:6 line2 描边 ink2 字}
             ButtonFlat{text: "<" width: 26.0 height: H_NAV padding: Inset{left: 0 right: 0} on_click: || nav_month(-1)
-                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
             ButtonFlat{text: "·" width: 26.0 height: H_NAV padding: Inset{left: 0 right: 0} on_click: || nav_month(0)
-                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
             ButtonFlat{text: ">" width: 26.0 height: H_NAV padding: Inset{left: 0 right: 0} on_click: || nav_month(1)
-                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3 text_style: theme.font_code{font_size: 11}}}
         }
 
         // .dow{9.5px gap:2 margin-bottom:5px}
@@ -2110,13 +2159,20 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         }
 
         // .grid{gap:2}  .d{height:40px}（原 34 —— 34 装不下「班」字，见文件里 2026-09-30 的说明）
-        // 高度 = 6 × 52 + 5 × 2 = 322
-        grid := RoundedView{width: Fill height: 322.0 flow: Down spacing: 2
-            draw_bg +: {color: c_card}
+        //
+        // ★★ 网格线（2026-09-30 用户要求）：日期格子之间要有分隔线，
+        //    否则「这一格是哪一天」分不出来，整片连成一团。
+        //    做法**不是**给每个格子加 border —— 7×6 的方框会画成双线，
+        //    圆角还会互相打架。真正的做法是**让容器的底色从格子间隙里露出来**：
+        //      grid 与每一行的 draw_bg 设成线色 c_line2，每个格子自己铺满 c_card，
+        //      spacing 那 1px 就自然成为网格线 —— 横竖都有，线宽严格相等。
+        //    高度 = 6 × 52 + 5 × 1 = 317
+        grid := RoundedView{width: Fill height: 317.0 flow: Down spacing: 1.0
+            draw_bg +: {color: c_line2}
             on_render: || {
                 let cs = cal_cells()
                 for row in 0..6 {
-                    RoundedView{width: Fill height: 52.0 flow: Right spacing: 2 draw_bg +: {color: c_card}
+                    RoundedView{width: Fill height: 52.0 flow: Right spacing: 1.0 draw_bg +: {color: c_line2}
                         for col in 0..7 {
                             let c = cs[row * 7 + col]
                             // .d = {height:34, 居中, mono 12.5px}
@@ -2155,7 +2211,11 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                                     //      单元格 34 → 本行只剩 8~13px → 「班」= 2px 残片
                                     //      单元格 46 → 本行 17px          → 仍是残片
                                     //      单元格 52 → 本行 23px          → 「班」完整清晰 ✅
-                                    //    所以 6 行网格 = 6 × 52 + 5 × 2 = 322（见 grid 的 height）。
+                                    //    所以 6 行网格高度 = 6 × 52 + 5 × 行距。
+                                    //    行距原为 2 → 322；加网格线后改成 1（那 1px 就是线本身）
+                                    //    → **317**，见 grid 的 height。
+                                    //    ⚠️ 变的只是行距，**单元格始终是 52** —— 单元格高度才是
+                                    //       「班」字能否完整的唯一约束，行距不参与这 52px 的分配。
                                     //    另外 align 要用 y: 0.5（垂直居中）；用 y: 0.0 也会把字裁掉。
                                     //    小方块（CircleView）不受影响，只有文字受此限制。
                                     RoundedView{width: Fill height: 23.0 flow: Right spacing: 2
@@ -2175,6 +2235,19 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                                         if c.fest {
                                             CircleView{width: 3.5 height: 3.5
                                                 draw_bg +: {color: c_ink2 border_radius: 0.0}}
+                                        }
+                                        // ★★ 放假的**每一天**都用绿色小字写出是哪个节日
+                                        //   （2026-09-30 用户要求：「这是中秋节还是国庆节」）。
+                                        //   只有绿点的话，说不清「放的什么假」—— 国庆 7 天
+                                        //   每天一个绿点，但用户想知道的是「这是国庆」。
+                                        //   字号 9：最多 3 个汉字 ≈ 37px，加绿点(3.5)+间距(2)
+                                        //   仍在格子内容宽（≈52px）之内。
+                                        //   ⚠️ 与「班」字同一个坑：**不写 height**、align 用
+                                        //      y: 0.5 —— 写死高度或 y: 0.0 都会把 CJK 裁成几条横。
+                                        if c.fname != "" {
+                                            Label{width: Fit text: c.fname
+                                                draw_text.color: c_ok
+                                                draw_text.text_style: theme.font_regular{font_size: 9}}
                                         }
                                         // 调休上班：一个「班」字。中文必须 font_regular，
                                         // font_code(LiberationMono) 没有 CJK 字形会变豆腐块。
@@ -2241,12 +2314,14 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         draw_bg +: {color: c_paper}
         // .btn-primary{background:ink;color:#fff;border-color:ink}  .btn .ic{mono 11px;opacity .75}
         ButtonFlat{text: "↑ 导入" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
-            draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333 border_size: 1.0 border_color: c_ink}
-            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+            draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
         // .btn-ghost{background:card;color:ink2;border-color:line2}
         ButtonFlat{text: "↓ 导出" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || export_to_entry()
-            draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-            draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3}}
+            draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
+                color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+            draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
         Label{width: Fill text: "" draw_text.color: c_ink3}
         // .tool-count{11px mono ink3}
         cnt := RoundedView{width: Fit height: H_TAP flow: Right align: Align{x: 1.0 y: 0.5}
@@ -2281,11 +2356,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             RoundedView{width: Fill height: 32.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
                 ButtonFlat{text: "取消" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
-                    draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3}}
+                    draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
                 ButtonFlat{text: "解析" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || start_import()
-                    draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333 border_size: 1.0 border_color: c_ink}
-                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+                    draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                        color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
             }
         }
     }
@@ -2299,11 +2376,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             draw_bg +: {color: c_accent_s border_radius: 8.0 border_size: 1.0 border_color: #xf0d9c9}
             preview_label := Label{width: Fill text: "" draw_text.color: #x8a3f16 draw_text.text_style: theme.font_regular{font_size: 12}}
             ButtonFlat{text: "取消" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || cancel_import()
-                draw_bg +: {border_radius: 7.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3}}
+                draw_bg +: {border_radius: 7.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
             ButtonFlat{text: "写入" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || confirm_import()
-                draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333 border_size: 1.0 border_color: c_ink}
-                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+                draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                    color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
         }
     }
 
@@ -2338,14 +2417,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             draw_bg +: {color: c_warn_s border_radius: 8.0 border_size: 1.0 border_color: #xf0dfc0}
             conflict_label := Label{width: Fill text: "" draw_text.color: c_warn draw_text.text_style: theme.font_bold{font_size: 13}}
             more_btn := ButtonFlat{text: "详情" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || toggle_more()
-                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: #xf0dfc0}
-                draw_text +: {color: c_warn color_hover: c_warn color_down: c_warn}}
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: #xf0dfc0 border_color_focus: #xf0dfc0}
+                draw_text +: {color: c_warn color_hover: c_warn color_down: c_warn color_focus: c_warn}}
             ButtonFlat{text: "回滚" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || undo_last()
-                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
-                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3}}
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
             ButtonFlat{text: "应用建议" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || apply_advice()
-                draw_bg +: {border_radius: 6.0 color: c_ink color_hover: #x000000 color_down: #x333333 border_size: 1.0 border_color: c_ink}
-                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+                draw_bg +: {border_radius: 6.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                    color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
         }
     }
 
@@ -2388,11 +2470,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             RoundedView{width: Fill height: 30.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
                 ButtonFlat{text: "清空事件库" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || clear_all()
-                    draw_bg +: {border_radius: 7.0 color: c_card color_hover: #xfdecec color_down: #xfdecec border_size: 1.0 border_color: c_line2}
-                    draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c}}
+                    draw_bg +: {border_radius: 7.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c color_focus: #xb91c1c}}
                 ButtonFlat{text: "收起" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || toggle_about()
-                    draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333 border_size: 1.0 border_color: c_ink}
-                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff}}
+                    draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                        color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
             }
         }
     }

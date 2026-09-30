@@ -349,6 +349,29 @@ def wait_text(sub, timeout=12.0, interval=0.4):
         s = snap()
 
 
+def wait_id(wid, timeout=10.0, interval=0.3):
+    """轮询等待某个 id 的控件进布局树 → (node, snapshot)。
+
+    ⚠️⚠️ 为什么需要它（2026-09-30 又踩一次）：`octo run --detach` 在
+       **第一帧画出**后就返回，但按钮/面板进布局树可能还差一两帧。
+       `open` 原来用一次性的 `need(snap(), "导入")`，宿主刚起来时可能扑空 →
+       open 静默失败 → 后面的 fill/parse/write 全部找不到目标 →
+       **整条截图链跑出一张「已加载 0 个事件」的空状态图**，
+       而脚本把每步输出都 `>/dev/null` 了，一点提示都没有。
+       凡是「点完要等界面变化」的地方，一律轮询，不要一次性取值。
+    """
+    deadline = time.time() + timeout
+    s = snap()
+    while True:
+        n = find_id(s, wid)
+        if n:
+            return n, s
+        if time.time() >= deadline:
+            return None, s
+        time.sleep(interval)
+        s = snap()
+
+
 def need_wait(s, label):
     return need(s, label)
 
@@ -364,10 +387,14 @@ def main():
             print(f"{n.get('i')} [{n.get('ty')}] r={n.get('r')}  {str(n.get('t'))[:50]!r}")
 
     elif cmd == "open":
-        n = need(snap(), "导入")
-        if n:
-            print("click 导入", click_node(n))
-            print("entry 存在:", find_id(snap(), "entry") is not None)
+        # 轮询而不是一次性找：宿主刚 detach 返回时按钮可能还没进布局树（见 wait_id 注释）
+        n, _ = wait_btn("导入")
+        if not n:
+            print("FAIL: 找不到按钮「导入」")
+            return
+        print("click 导入", click_node(n))
+        e, _ = wait_id("entry")
+        print("entry 存在:", e is not None)
 
     elif cmd == "wipe":
         if wipe_entry():
@@ -380,7 +407,7 @@ def main():
         #    吃成 LF，灌进去的字节数和文件对不上（实测 1235 → 1177），
         #    做「原样往返」断言时就成了两个不可比的量。
         data = io.open(sys.argv[2], encoding="utf-8", newline="").read()
-        e = find_id(snap(), "entry")
+        e, _ = wait_id("entry")
         if not e:
             print("FAIL: entry 不在树里，先 open")
             return
@@ -393,7 +420,7 @@ def main():
         print(f"已灌入 {len(data)} 字节")
 
     elif cmd == "parse":
-        n = need(snap(), "解析")
+        n, _ = wait_btn("解析")
         if n:
             print("click 解析", click_node(n))
             # 解析分块续跑 → 预览条要等，不能固定 sleep（见 wait_btn 注释）
