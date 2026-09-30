@@ -1,0 +1,12 @@
+{
+  "capabilities": [
+    "storage"
+  ],
+  "id": "com.oma.octosense.calendar",
+  "integrity": {
+    "bundle_blake3": "09172a8da9e7b8e1a4c8443fa36a1a3746b73ce3dc31099ee7d2e8c8d1c7ad08"
+  },
+  "name": "OctoSense 日历",
+  "schema": 1,
+  "version": "0.1.0"
+}

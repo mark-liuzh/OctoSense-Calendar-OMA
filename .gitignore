@@ -1,4 +1,9 @@
-.workbuddy/
-*.tmp
+build/
 target/
-node_modules/
+.local-state/
+*.key
+*.cert
+.DS_Store
+
+# 本地实测产物：宿主运行日志、快照、widget 树、截图、应用私有数据
+.runtime/

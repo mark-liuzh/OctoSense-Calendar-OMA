@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="OctoSense 日历">
+  <title>OctoSense 日历</title>
+  <!-- 档案卷宗配色：纸 #faf9f7 / 墨 #191714 / 赤陶 #b4531f -->
+  <rect width="64" height="64" rx="14" fill="#191714"/>
+  <rect x="10" y="14" width="44" height="40" rx="7" fill="#faf9f7"/>
+  <path d="M10 21a7 7 0 0 1 7-7h30a7 7 0 0 1 7 7v5H10z" fill="#b4531f"/>
+  <!-- 装订环 -->
+  <rect x="20" y="9" width="4" height="10" rx="2" fill="#faf9f7"/>
+  <rect x="40" y="9" width="4" height="10" rx="2" fill="#faf9f7"/>
+  <!-- 日期格 -->
+  <rect x="16" y="31" width="7" height="5" rx="1.6" fill="#d5cfc8"/>
+  <rect x="28" y="31" width="7" height="5" rx="1.6" fill="#d5cfc8"/>
+  <rect x="40" y="31" width="7" height="5" rx="1.6" fill="#d5cfc8"/>
+  <!-- 全天事件条 -->
+  <rect x="16" y="40" width="31" height="6" rx="3" fill="#b4531f"/>
+  <!-- 定时事件 -->
+  <rect x="16" y="48" width="19" height="4" rx="2" fill="#9c9590"/>
+</svg>

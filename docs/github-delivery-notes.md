@@ -101,4 +101,4 @@ winget install --id GitHub.cli --exact --accept-source-agreements --accept-packa
 4. **拉取官方五仓库工作区**并构建 `hub` + `card-host`
 5. **编写 `main.splash` + `manifest.json` 草案**
 6. **按 10/4 23:59 倒排 7 天计划**
-7. **资料库待办**：邀请 13692203846 加入本空间（需在 WorkBuddy 界面手动完成，脚本无邀请接口）
+7. **资料库待办**：邀请队友的 WorkBuddy 账号加入本空间（需在 WorkBuddy 界面手动完成，脚本无邀请接口）

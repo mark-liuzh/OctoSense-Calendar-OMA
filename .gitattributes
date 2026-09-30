@@ -1,0 +1,17 @@
+# 统一换行符：仓库里一律 LF。
+# 否则 Windows 上 clone 出来的 .sh 带 CRLF，在 bash 下会以
+# "bad interpreter: /usr/bin/env bash^M" 直接失败。
+* text=auto eol=lf
+
+# 二进制素材，不做任何换行转换
+*.png  binary
+*.webp binary
+*.svg  text eol=lf
+
+# 应用脚本与文档
+*.splash text eol=lf
+*.sh     text eol=lf
+*.py     text eol=lf
+*.json   text eol=lf
+*.ics    text eol=lf
+*.md     text eol=lf
