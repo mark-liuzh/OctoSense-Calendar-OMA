@@ -69,9 +69,26 @@ shot "06-list2.png"
 
 echo
 echo "=== [7/7] 错误检查 ==="
-echo "编译/运行错误数: $(grep -c '\[E\]' "$OUT/run.log" 2>/dev/null || echo 0)"
-grep -i "load failed\|404" "$OUT/run.log" | head -3 || true
+# ⚠️ 取错误数必须走 host_error_count —— 直接写 `$(grep -c ... || echo 0)`
+#    会得到两行 "0\n0"，下面的 `= "0"` 比较就会假失败（见 _env.sh 的说明）。
+errs=$(host_error_count "$OUT/run.log")
+echo "编译/运行错误数: $errs"
 echo "错误行（如有）:"; grep '\[E\]' "$OUT/run.log" | head -5 || true
+
+# 资源加载失败：硬断言（原先是「只打印、不失败」）。
+#   ⚠️ 不要匹配裸 `404` —— 宿主日志里的 `splash.rs:404:9` 是**源码行号**，
+#      与 HTTP 状态码无关，实测会命中假阳性（2026-09-30）。
+#      只认明确的加载失败措辞。
+asset_bad=0
+if grep -qiE "load failed|failed to load|failed to fetch|no such file" "$OUT/run.log"; then
+  echo "FAIL: 宿主日志里出现资源加载失败："
+  grep -inE "load failed|failed to load|failed to fetch|no such file" "$OUT/run.log" | head -5
+  asset_bad=1
+fi
+if [ "$errs" != "0" ]; then
+  echo "FAIL: 编译/运行错误数不为 0"
+  exit 1
+fi
 
 echo
 echo "=== 证据文件 ==="
@@ -79,4 +96,8 @@ ls -la "$OUT/evidence/" 2>/dev/null
 
 # 收工
 kill_host
+if [ "$asset_bad" != "0" ]; then
+  echo "DONE（带资源加载失败）"
+  exit 1
+fi
 echo "DONE"

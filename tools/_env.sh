@@ -83,7 +83,7 @@ CURL="curl -s --noproxy 127.0.0.1 --max-time 20"
 #   paintfix 「画背景必须用 RoundedView / CircleView / SolidView」规则门禁
 static_gate() {
   local f="$ROOT/bundle/main.splash" rc=0 out t
-  for t in brace quotes toplevel deps paintfix; do
+  for t in brace quotes toplevel deps paintfix btnfocus; do
     if ! out=$("$PY" "$ROOT/tools/$t.py" "$f" 2>&1); then
       echo "FATAL: 静态门禁 tools/$t.py 未通过：" >&2
       printf '%s\n' "$out" | tail -20 >&2
@@ -91,7 +91,7 @@ static_gate() {
     fi
   done
   [ "$rc" = "0" ] || exit 1
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix 全过"
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus 全过"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
@@ -108,6 +108,17 @@ assert_clean() {
       printf '%s\n' "$t" | tail -2 >&2
       exit 1 ;;
   esac
+}
+
+# ── 宿主日志里的编译/运行错误数 ───────────────────────────────────────
+# ⚠️ 不能写 `$(grep -c ... || echo 0)`：grep -c 无匹配时**自己会输出 0**
+#    且退出码为 1，于是 `|| echo 0` 再补一个 0 → 结果是两行 "0\n0"。
+#    后果有两个：屏幕上多出一个来路不明的 0（看着像别的什么东西坏了），
+#    以及任何 `[ "$n" = "0" ]` 比较都会**假失败**（2026-09-30 踩到）。
+host_error_count() {
+  local n
+  n=$(grep -c '\[E\]' "$1" 2>/dev/null || true)
+  printf '%s' "${n:-0}"
 }
 
 # ── 宿主进程探测 ──────────────────────────────────────────────────────

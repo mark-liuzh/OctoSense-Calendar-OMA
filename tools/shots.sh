@@ -145,7 +145,7 @@ expect_text "关于页已打开" "队伍 OMA"
 shot "07-about.png"
 
 echo
-echo "编译/运行错误数: $(grep -c '\[E\]' "$OUT/run-shots.log" 2>/dev/null || echo 0)"
+echo "编译/运行错误数: $(host_error_count "$OUT/run-shots.log")"
 kill_host
 
 # ── 收尾检查（三道）─────────────────────────────────────────────────

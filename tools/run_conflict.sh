@@ -84,7 +84,7 @@ shot "09-about.png"
 
 echo
 echo "=== 错误检查 ==="
-echo "编译/运行错误数: $(grep -c '\[E\]' "$OUT/run-conflict.log" 2>/dev/null || echo 0)"
+echo "编译/运行错误数: $(host_error_count "$OUT/run-conflict.log")"
 grep '\[E\]' "$OUT/run-conflict.log" | head -5 || true
 echo "证据文件:"; ls -la "$EV"
 

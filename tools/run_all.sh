@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # OctoSense 全量回归 · 一条命令跑完所有自检与端到端流程
 #
-#   bash tools/run_all.sh            # 静态自检 + 5 条端到端流程
+#   bash tools/run_all.sh            # 静态自检 + 6 条端到端流程
 #   bash tools/run_all.sh --fast     # 只跑静态自检（不启动宿主，秒级）
 #
 # 每条流程**串行**执行，且每条都以「宿主已收工」结束 —— 串行是刻意的：
@@ -35,14 +35,14 @@ echo "OctoSense 全量回归   $(date '+%Y-%m-%d %H:%M:%S')"
 echo "python:    $PY"
 echo "card-host: $HOST"
 echo "端口:      $PORT"
-echo "模式:      $([ "$FAST" = 1 ] && echo '仅静态自检' || echo '静态自检 + 5 条端到端流程')"
+echo "模式:      $([ "$FAST" = 1 ] && echo '仅静态自检' || echo '静态自检 + 6 条端到端流程')"
 echo "=================================================================="
 
 # ── 阶段 1：静态自检 ──────────────────────────────────────────────────
 echo
 echo "######## 阶段 1/2 · 静态自检 ########"
 static_gate
-for t in brace quotes toplevel deps paintfix; do
+for t in brace quotes toplevel deps paintfix btnfocus; do
   printf '  %-10s ' "$t"
   if out=$("$PY" "$ROOT/tools/$t.py" "$ROOT/bundle/main.splash" 2>&1); then
     echo "PASS"
@@ -61,9 +61,9 @@ if [ "$FAST" = 1 ]; then
 fi
 
 # ── 阶段 2：端到端流程 ────────────────────────────────────────────────
-# 顺序固定：基本 → 冲突消解 → 边界/往返 → 负例 → 节假日。
+# 顺序固定：基本 → 冲突消解 → 边界/往返 → 负例 → 节假日 → 布局几何。
 # 前一条是后一条的前提（例如节假日流程假设存储为空、事件库可由脚本自造）。
-STEPS="run_e2e run_conflict run_edge run_negative run_festival"
+STEPS="run_e2e run_conflict run_edge run_negative run_festival run_layout"
 
 FAILED=""
 NFAIL=0

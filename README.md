@@ -120,14 +120,14 @@ com.oma.octosense.calendar 0.1.0 — PASSED
 
 ## 端到端实测（可复现）
 
-五条脚本都会在本地起一个隔离宿主，用宿主的远程控制桥（`/k` 输入、`/snap` 快照、`/g?raw=1` 截图）
+六条脚本都会在本地起一个隔离宿主，用宿主的远程控制桥（`/k` 输入、`/snap` 快照、`/g?raw=1` 截图）
 逐步操作，**并在结束前检查宿主日志里的编译/运行错误数**。退出码非零即失败。
 
-每一条在起宿主之前都会先跑**静态门禁**（`brace` / `quotes` / `toplevel` / `deps` / `paintfix`），
+每一条在起宿主之前都会先跑**静态门禁**（`brace` / `quotes` / `toplevel` / `deps` / `paintfix` / `btnfocus`），
 不过就直接退出——免得带着语法或规则错误去跑十分钟的界面流程。
 
 ```bash
-bash tools/run_all.sh        # 一键：静态自检 + 下面五条流程（串行，推荐）
+bash tools/run_all.sh        # 一键：静态自检 + 下面六条流程（串行，推荐）
 bash tools/run_all.sh --fast # 只跑静态自检，秒级
 
 bash tools/run_e2e.sh        # ① 基本流程：空状态 → 导入 → 写入 → 列表
@@ -135,7 +135,13 @@ bash tools/run_conflict.sh   # ② 冲突 → 改期 → 导出 → 往返幂等
 bash tools/run_edge.sh       # ③ 边界字段（RRULE / EXDATE / RDATE / 转义 / 折行）与往返
 bash tools/run_negative.sh   # ④ 异常输入：空输入 / 非 ICS / 空日历 / 残缺事件
 bash tools/run_festival.sh   # ⑤ 节假日标注 + 节日来源切换（含像素级颜色断言）
+bash tools/run_layout.sh     # ⑥ 逐页布局几何（12 个界面状态，查零尺寸/越界控件）
 ```
+
+①–⑤ 查的是**功能对不对**（状态文本、像素颜色、往返幂等）；⑥ 查的是**界面有没有坏掉**：
+把应用走到 12 个界面状态，每步对 `/snap` 快照做几何检查。像素断言只覆盖「特意去取色的
+那几个点」，一个被压成 0 高的 Label 或跑到窗口右边的按钮不会让任何断言失败 —— 这道几何
+防线就是为它们准备的。
 
 可用 `PY=` / `OCTO_CARD_HOST=` / `PORT=` 覆盖环境探测。
 
@@ -296,18 +302,22 @@ bundle/                 提交给宿主的应用包
 tools/                  开发与实测工具（不属于应用运行时）
   _env.sh               共用环境探测（python / card-host / 端口 / 代理）
                         + static_gate 静态门禁 + boot_host/kill_host 宿主生命周期
-  run_all.sh            一键全量回归：静态自检 + 五条流程串行（推荐入口）
+  run_all.sh            一键全量回归：静态自检 + 六条流程串行（推荐入口）
   run_e2e.sh            ① 基本流程实测
   run_conflict.sh       ② 冲突·导出·往返·回滚实测
   run_edge.sh           ③ 边界字段与往返幂等实测
   run_negative.sh       ④ 异常输入实测
   run_festival.sh       ⑤ 节假日标注 + 节日来源切换实测（含像素级颜色断言）
+  run_layout.sh         ⑥ 逐页布局几何扫描（12 个界面状态）
   shots.sh              可复现生成 bundle/screenshots/ 里的商店截图
   e2e.py                远程控制桥驱动（输入/点击/读文本/截图/取色）
+  layout_scan.py        在 /snap 上查零尺寸 / 负坐标 / 越界的可见控件
   zoom.py               纯标准库 PNG 解码：局部放大 + 像素采样（/snap 不带颜色）
   brace.py quotes.py deps.py toplevel.py   对 main.splash 的静态自检
                                            （括号平衡 / 引号配对 / 前向引用 / 顶层定义）
   paintfix.py           「画背景必须用 RoundedView/CircleView/SolidView」规则门禁
+  btnfocus.py           「每个 ButtonFlat 都要写 color_focus」规则门禁
+                        （漏了就点一下「消失」—— 见上方排障小节）
   drive.py dump_snap.py        早期驱动脚本与快照解析工具（保留备查）
 seed.ics                基线测试数据（3 个事件，覆盖三种时间写法）
 conflict.ics            冲突测试数据（与 seed 重叠 30 分钟）
