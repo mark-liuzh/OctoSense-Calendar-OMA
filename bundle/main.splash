@@ -13,6 +13,39 @@
 //   - 没有字符串切片，取子串用 to_chars()
 //   - to_f64 失败返回 NaN（不是 nil），必须 `if v >= 0` 正面守卫
 //   - 单数无 sort/map/filter/join/slice，全部手写 for
+//
+// ⚠️⚠️ 画背景**必须**用 RoundedView / CircleView / SolidView，**不能用 View**
+//     （血泪，2026-09-30 才发现，此前全项目所有「用 View 画背景」的地方都是白干）：
+//       makepad 里 `View = ViewBase {}`（widgets/src/view_ui.rs:5），
+//       **既没有 `show_bg: true`，也没有带 `pixel` 的 `draw_bg`**。
+//       所以 `View{... draw_bg +: {color: c_ok}}` 只是往一个永远不绘制的 shader
+//       上写了个颜色 —— 一个像素都不画，且**不报错、布局树里照样有尺寸**，
+//       极难发现。之前没被发现是因为这个设计几乎单色（大量 c_card/c_paper
+//       白底画在白纸上，画不出来也看不出来）。
+//     正确选择：
+//       · `RoundedView`  —— 通用（color / border_radius / border_size /
+//                           border_color 全支持，无阴影）
+//       · `CircleView`   —— 圆点。**border_radius 必须归 0**，
+//                           radius<=0 才会自动取 min(w,h)/2；写 2.0/2.5
+//                           会让半径 ≥ 半边长，圆角矩形直接退化消失。
+//       · `SolidView`    —— 纯色方块（只有 color 一个字段）
+//       · `Hr`           —— 分隔线（自带 show_bg + pixel）
+//     `ScrollYView` 同样没有 show_bg，页面底色由窗口给，别再给它写 draw_bg。
+//     `tools/paintfix.py` 会把违反这条规则的写法全部列出来，**当作门禁跑**。
+//
+// ⚠️⚠️ **Label 的 height 只当最小值，压不下去**（血泪，2026-09-30，同一天第二坑）：
+//     `Label{height: 19}` 放进 `flow: Down` 时，makepad 取 **max(显式高度, 自然行盒)**。
+//     font_size 12 的中文/等宽数字，自然行盒 ≈ 26px —— 也就是**写 19、21、23 都一样占 26**。
+//     后果：容器高度按「我写了多少」估算，实际会超支，**把后面的兄弟节点挤扁**。
+//     被挤扁的文字（尤其 CJK）会只剩中间几条横，看上去就是「一个小点」，
+//     极难和「没画出来」区分。日历格子的「班」字就栽在这上面：
+//       单元格 34 → 标记行实得 8~13px → 「班」= 2px 残片（像个点）
+//       单元格 46 → 标记行实得 17px    → 依旧是残片
+//       单元格 52 → 标记行实得 23px    → 「班」完整清晰
+//     结论：给**文字**留空间时，按 `≈ 2.2 × font_size` 估行盒；容器给足，
+//     别指望把 Label 的 height 写小来省地方。
+//     验证手段：改完布局后用 `/d` dump 布局树，**看兄弟节点的实测 r 高度**，
+//     而不是看自己写了多少（`tools/e2e.py dump` + `zoom.py` 截图回读像素）。
 
 // 设计语言色板（集中一处，方便整体调色）
 // ⚠️ 必须在文件最前面声明：Splash 是顺序执行，函数体内引用全局变量是运行时求值，
@@ -32,6 +65,63 @@ let c_warn     = #xb45309
 let c_warn_s   = #xfdf6e7
 let c_work     = #x2f6f8f   // 工作类事件色条（唯一允许的副色）
 
+// ── 中国法定节假日 / 调休数据（内置） ────────────────────────────────
+// 为什么内置而不是联网拉取：本应用只申请了 `storage` 能力、`hosts` 为空，
+//   运行时没有任何网络出口，假日数据只能随 bundle 一起离线携带。
+// 数据来源（均为国务院办公厅通知，多源交叉核对一致）：
+//   2025：《关于 2025 年部分节假日安排的通知》（2024-11-12）
+//   2026：《关于 2026 年部分节假日安排的通知》
+// 格式说明：`|YYYYMMDD|YYYYMMDD|…`，两端补竖线，查询时用 `search("|日期|")`
+//   做**精确**匹配 —— 若不加竖线，"2025010" 会误命中 "20250101"。
+let HOLIDAYS = ""
+    + "|20250101|"                                            // 元旦（不调休）
+    + "|20250128|20250129|20250130|20250131|20250201|20250202|20250203|20250204|"  // 春节 8 天
+    + "|20250404|20250405|20250406|"                          // 清明（不调休）
+    + "|20250501|20250502|20250503|20250504|20250505|"        // 劳动节 5 天
+    + "|20250531|20250601|20250602|"                          // 端午（不调休）
+    + "|20251001|20251002|20251003|20251004|20251005|20251006|20251007|20251008|"  // 国庆+中秋 8 天
+    + "|20260101|20260102|20260103|"                          // 元旦 3 天
+    + "|20260215|20260216|20260217|20260218|20260219|20260220|20260221|20260222|20260223|"  // 春节 9 天
+    + "|20260404|20260405|20260406|"                          // 清明（不调休）
+    + "|20260501|20260502|20260503|20260504|20260505|"        // 劳动节 5 天
+    + "|20260619|20260620|20260621|"                          // 端午（不调休）
+    + "|20260925|20260926|20260927|"                          // 中秋（不调休）
+    + "|20261001|20261002|20261003|20261004|20261005|20261006|20261007|"  // 国庆 7 天
+
+// 调休上班日：本该休息的周末被调来上班，日历里必须和普通工作日区分开 ——
+// 用户最容易记错的就是这几天。
+let WORKDAYS = "|20250126|20250208|20250427|20250928|20251011|"
+    + "|20260104|20260214|20260228|20260509|20260920|20261010|"
+
+// 中国节日「起止 + 名称」，每 3 项一组：起始日 | 结束日 | 名称。
+// HOLIDAYS 只有日期没有名字，说明行要写出「国庆」这类名称就得靠这张表。
+// 春节/端午/中秋是农历，公历日期逐年不同，所以按年显式列出而不是算出来。
+// ⚠️⚠️ 血泪（2026-09-30）：**不要在每行首尾都写竖线**。`+ "|a|b|c|" + "|d|e|f|"`
+//    拼出来是 `|a|b|c||d|e|f|`，中间多一个空字段 → split 后步长变成 **4** 不是 3，
+//    `parts[1 + k*3]` 只有 k=0 命中，其余全落到空串上，整张表的节日名都取不到。
+//    **正确写法**：整表只有一个前导 `|` 和组间单竖线，首行不带竖线、末行不留尾竖线。
+let CN_SPANS = ""
+    + "20250101|20250101|元旦"
+    + "|20250128|20250204|春节"
+    + "|20250404|20250406|清明"
+    + "|20250501|20250505|劳动节"
+    + "|20250531|20250602|端午"
+    + "|20251001|20251008|国庆中秋"
+    + "|20260101|20260103|元旦"
+    + "|20260215|20260223|春节"
+    + "|20260404|20260406|清明"
+    + "|20260501|20260505|劳动节"
+    + "|20260619|20260621|端午"
+    + "|20260925|20260927|中秋"
+    + "|20261001|20261007|国庆"
+
+// 国际节日（固定公历日期），每 2 项一组：MMDD | 名称。
+// 只收固定日期的 —— 感恩节/母亲节这类「某月第 N 个周日」需要额外的星期推算，
+// 宁可先不做，也不写一个可能算错的日期出来。放假性质与国内无关，只作提示。
+// 分隔符约定同 CN_SPANS：首项不带竖线，组间单竖线，末尾不留竖线。
+let INTL_FIXED = "0101|元旦|0214|情人节|0308|妇女节|0401|愚人节"
+    + "|0501|劳动节|0601|儿童节|1031|万圣节|1224|平安夜|1225|圣诞节"
+
 let KEYS_FILE = "events.json"     // 事件库
 let SNAP_FILE = "snapshots.json"  // 每次导入的快照，支持回滚
 
@@ -45,6 +135,10 @@ let skipped = 0
 let errors = []
 let import_text = ""   // 待导入的 ICS 文本（从输入框粘）
 let chunk = {}         // 分块解析状态
+
+// 节日来源：0 = 仅中国 · 1 = 仅国际 · 2 = 全部。默认只看中国（法定假期直接影响
+// 排期，是本地用户最需要的），国际节日要通过按钮显式打开，避免默认把格子塞满。
+let festival_mode = 0
 
 // 状态条三态（对应设计稿 .status / .status.ok / .status.warn）
 let status_text = ""
@@ -262,18 +356,35 @@ fn new_event() {
     return { uid: "", summary: "", dtstart: "", dtend: "", location: "",
              description: "", organizer: "", status: "", sequence: 0,
              all_day: false, start_utc: false, timezone: "",
+             // 原始 RRULE 文本。本应用**不展开**重复规则（展开要处理
+             // EXDATE/RDATE/COUNT/UNTIL 和跨时区夏令时，超出原型范围），
+             // 但也**绝不丢弃** —— 原样留在事件里、原样写回导出，
+             // 这样「导出再导入」仍然字段级无损。
+             rrule: "",
+             // 重复规则的配套日期（可能多行）。单值字段存不下，用 "|" 串起来，
+             // 导出时再拆回多行。只保留 RRULE 而丢掉 EXDATE，
+             // 会把用户明确排除掉的那几次会议又变回来。
+             exdate: "", rdate: "",
+             // RFC 5545 要求每个 VEVENT 带 DTSTAMP（创建时间戳）。
+             // ⚠️ 没有获取「当前时间」的能力，所以**不编造**：输入里有就原样写回，
+             //    没有就不写 —— 凭空造一个时刻比缺字段更糟。
+             dtstamp: "",
              start_minutes: -1, end_minutes: -1 }
 }
 
 
 // ---------------------------------------------------------------- 分块解析
 
-// 处理 lines[start..end)。cur / in_vevent 跨块传递。
+// 处理 lines[start..end)。cur / in_vevent / begin_line 跨块传递。
 fn parse_lines(lines, start, end, carry) {
     let cur = carry.cur
     let in_vevent = carry.in_vevent
     let evs = carry.events
     let errs = carry.errors
+    // 当前 VEVENT 的**起始行号**（1 起）。报错要说「第 4 行起的事件缺 UID」，
+    // 而不是指向 END:VEVENT 那一行 —— 后者是对的但没意义，用户拿着行号回文件里
+    // 找，看到的是 END，只会更困惑。
+    let begin_line = carry.begin_line
 
     for idx in start..end {
         if idx >= lines.len() { break }
@@ -288,6 +399,7 @@ fn parse_lines(lines, start, end, carry) {
             if value.trim() == "VEVENT" {
                 in_vevent = true
                 cur = new_event()
+                begin_line = idx + 1
             }
             continue
         }
@@ -296,9 +408,9 @@ fn parse_lines(lines, start, end, carry) {
                 in_vevent = false
                 if cur != nil {
                     if cur.uid == "" {
-                        errs.push("第 " + ("" + (idx + 1)) + " 行：VEVENT 缺 UID，已跳过")
+                        errs.push("第 " + ("" + begin_line) + " 行起的事件缺 UID")
                     } else if cur.dtstart == "" {
-                        errs.push("第 " + ("" + (idx + 1)) + " 行：" + cur.uid + " 缺 DTSTART，已跳过")
+                        errs.push("第 " + ("" + begin_line) + " 行起的事件缺 DTSTART")
                     } else {
                         evs.push(cur)
                     }
@@ -338,10 +450,30 @@ fn parse_lines(lines, start, end, carry) {
         } else if key == "SEQUENCE" {
             let n = value.trim().to_f64()
             if n >= 0 { cur.sequence = n } else { cur.sequence = 0 }
+        } else if key == "RRULE" {
+            // ⚠️ 曾经这里什么都没有 → 带重复规则的日程被**静默降级成单次事件**，
+            //    导出的 ICS 里 RRULE 也没了，用户完全不知道自己的每周例会被吃掉。
+            //    现在原样存下来，导出时原样写回（见 export_ics）。
+            cur.rrule = value.trim()
+        } else if key == "EXDATE" {
+            let v = value.trim()
+            if v != "" {
+                if cur.exdate == "" { cur.exdate = v }
+                else { cur.exdate = cur.exdate + "|" + v }
+            }
+        } else if key == "RDATE" {
+            let v = value.trim()
+            if v != "" {
+                if cur.rdate == "" { cur.rdate = v }
+                else { cur.rdate = cur.rdate + "|" + v }
+            }
+        } else if key == "DTSTAMP" {
+            cur.dtstamp = value.trim()
         }
     }
 
-    return { events: evs, errors: errs, cur: cur, in_vevent: in_vevent }
+    return { events: evs, errors: errs, cur: cur, in_vevent: in_vevent,
+             begin_line: begin_line }
 }
 
 
@@ -352,7 +484,8 @@ fn parse_lines(lines, start, end, carry) {
 //    所以这里的铁律是「绝不抛错」，所有状态字段一律预先声明。
 fn new_carry() {
     return { started: false, lines: [], cursor: 0, events: [], errors: [],
-             cur: nil, in_vevent: false, done: false, progress: 0.0 }
+             cur: nil, in_vevent: false, begin_line: 0,
+             done: false, progress: 0.0 }
 }
 
 
@@ -370,12 +503,13 @@ fn parse_all(text) {
     carry.errors = r.errors
     carry.cur = r.cur
     carry.in_vevent = r.in_vevent
+    carry.begin_line = r.begin_line
     carry.cursor = carry.lines.len()
     carry.done = true
     carry.progress = 1.0
 
     if carry.cur != nil {
-        carry.errors.push("文件末尾：VEVENT 未闭合（缺 END:VEVENT），已忽略")
+        carry.errors.push("第 " + ("" + carry.begin_line) + " 行起的事件未闭合")
         carry.cur = nil
     }
     return carry
@@ -628,12 +762,27 @@ fn fold_line(line) {
 }
 
 
-fn export_ics(list) {
-    let out = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OctoSense//OMA//CN\r\n"
+// 拼一行 EXDATE / RDATE。
+// key = "EXDATE" 或 "RDATE"；v = 原始日期时间值。
+// 参数按**事件自身**的时间类型重建：全天事件补 `;VALUE=DATE`，
+// 有时区的事件补 `;TZID=<该时区>` —— 与 DTSTART 的处理保持一致，
+// 否则同一个时间在 EXDATE 里会变成「浮动时间」而对不上主时间。
+fn exdate_line(key, v, e) {
+    if e.all_day { return key + ";VALUE=DATE:" + v }
+    if e.timezone != "" { return key + ";TZID=" + e.timezone + ":" + v }
+    return key + ":" + v
+}
+
+
+fn export_ics(list) {    let out = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//OctoSense//OMA//CN\r\n"
     for i in list.len() {
         let e = list[i]
         out = out + "BEGIN:VEVENT\r\n"
         out = out + fold_line("UID:" + e.uid) + "\r\n"
+        // RFC 5545 要求 VEVENT 带 DTSTAMP。只写回输入里的原值，不编造。
+        if e.dtstamp != "" {
+            out = out + "DTSTAMP:" + e.dtstamp + "\r\n"
+        }
         out = out + fold_line("SUMMARY:" + escape_value(e.summary)) + "\r\n"
         // ⚠️ 时间必须带回类型参数，否则往返一次语义就丢了：
         //    `DTSTART;TZID=Asia/Shanghai:20261005T143000` 直接输出成
@@ -657,6 +806,32 @@ fn export_ics(list) {
         }
         if e.location != "" {
             out = out + fold_line("LOCATION:" + escape_value(e.location)) + "\r\n"
+        }
+        // ⚠️ 下面两行曾经缺失 → DESCRIPTION / ORGANIZER 解析进来却写不回去，
+        //    「导出再导入」会静默丢字段。而 UID 匹配的往返测试（新增/改期/跳过）
+        //    对这类字段级缩水是**无感**的，所以一直没被发现。
+        if e.description != "" {
+            out = out + fold_line("DESCRIPTION:" + escape_value(e.description)) + "\r\n"
+        }
+        if e.organizer != "" {
+            out = out + fold_line("ORGANIZER:" + e.organizer) + "\r\n"
+        }
+        if e.rrule != "" {
+            out = out + fold_line("RRULE:" + e.rrule) + "\r\n"
+        }
+        // EXDATE / RDATE 可能有多行 —— 解析时用 "|" 串存，这里拆回多行。
+        // 只留 RRULE 而丢掉 EXDATE，会把用户明确排除掉的那几次又变回来。
+        // 不存 tz/vk 而是按事件自身的时间类型重建参数：现实中 EXDATE 与 DTSTART
+        // 同型（同 TZID 或同为全天），这样既省字段又能覆盖实际用法。
+        if e.exdate != "" {
+            for x in e.exdate.split("|") {
+                out = out + exdate_line("EXDATE", x, e) + "\r\n"
+            }
+        }
+        if e.rdate != "" {
+            for x in e.rdate.split("|") {
+                out = out + exdate_line("RDATE", x, e) + "\r\n"
+            }
         }
         if e.status != "" { out = out + "STATUS:" + e.status + "\r\n" }
         out = out + "SEQUENCE:" + ("" + e.sequence) + "\r\n"
@@ -762,12 +937,49 @@ fn save() {
 //      调 render() 会报 "widget method render not found"。所以这里只列动态容器。
 //   3. `height: Fit` + on_render **零产出** → 节点从布局树消失并扰乱兄弟的 Fill 分配；
 //      所以动态容器一律显式高度/固定高度，空状态也给占位。
+// 节日来源按钮的文案。定义在 refresh_all 之前 —— Splash 里函数体引用
+// 「后面才定义」的函数会直接报错（前向引用限制）。
+fn festival_mode_label() {
+    if festival_mode == 0 { return "节日 中国" }
+    if festival_mode == 1 { return "节日 国际" }
+    return "节日 全部"
+}
+
+
+// 当前视图的年月标题。同上，必须能被 refresh_all 显式推给控件 ——
+// 静态 Label 的 `text:` 只在建树时求值一次，翻月不会自己更新（实测）。
+fn month_title_text() {
+    return "" + view_year() + " 年 " + ("" + view_month()) + " 月"
+}
+
+
+fn cal_ym_text() {
+    return "" + view_year() + " · " + ("" + view_month())
+}
+
+
 fn refresh_all() {
+    // 翻月会改变的两处标题。静态 Label 的 `text:` 只在建树时求值一次，
+    // **不会**跟着 view_year/view_month 自己变 —— 不加这两行，翻到 2025-10
+    // 网格早就是十月了，标题还钉着「2026 年 9 月」（实测）。
+    ui.month_title.set_text(month_title_text())
+    ui.cal_ym.set_text(cal_ym_text())
+    // 节假日说明：节日一行、放假安排一行（见 fest_bar 的血泪注释）。
+    // 第二行没内容就整行让位 —— 隐藏的 widget 不占空间，容器 height: Fit 会跟着变矮。
+    let fa = festival_note(view_year(), view_month())
+    let fb = month_holiday_note(view_year(), view_month())
+    if fa == "" { fa = "本月无节日" }
+    ui.fest_line.set_text(fa)
+    ui.fest_line2.set_text(fb)
+    ui.fest_row2.set_visible(fb != "")
     ui.metrics.render()
     ui.grid.render()
     ui.cnt.render()
     ui.list.render()
     ui.status_panel.render()
+    // 节日来源按钮的文案跟着模式走。按钮是静态声明的（on_render 里建的按钮
+    // 点不动），所以文案只能在这里显式同步。
+    ui.fest_btn.set_text(festival_mode_label())
     sync_conflict()
     sync_confirm()
 }
@@ -802,9 +1014,15 @@ fn load() {
 }
 
 
+// 解析警告摘要。
+// ⚠️ 原先只返回「（N 条警告）」：用户知道自己出错了，却不知道错在哪一行、
+//    错在哪个字段 —— 知道有错但不知道错在哪，等于没说。
+//    状态条只有一行（≈33 字符），所以报**第一条**的具体内容 + 剩余条数；
+//    行号足够让人回到源文件定位。
 fn err_msg() {
     if errors.len() == 0 { return "" }
-    return "（" + ("" + errors.len()) + " 条警告）"
+    if errors.len() == 1 { return " · " + errors[0] }
+    return " · " + errors[0] + " 等 " + ("" + errors.len()) + " 条"
 }
 
 
@@ -813,6 +1031,11 @@ fn scan_conflicts() {
     conflicts = find_conflicts(events)
     advice = build_advice(conflicts, events)
     show_advice = conflicts.len() > 0
+    // ⚠️ 这里**不要**再往状态条上拼「含 N 条重复日程」：状态条是单行固定宽度，
+    //    实测多出 6 个字就换行 → 第二行被容器裁掉一半，还压住了下面的冲突条。
+    //    重复日程的告知改由两处承担（都不动布局）：
+    //      ① 列表里每条重复日程都挂「每周重复 / 每年重复」描边标签；
+    //      ② 导入面板的说明文字事先讲清楚规则会被保留。
     // 文案照设计稿：`已写入 3 个事件 · 新增 3 / 改期 0 / 跳过 0`（.status.ok）
     if conflicts.len() == 0 {
         set_status_ok("已写入 " + ("" + events.len()) + " 个事件 · 新增 " + ("" + added)
@@ -838,6 +1061,8 @@ fn confirm_import() {
     // 写入完成 → 收起导入面板，让主列表立刻显示刚写进去的事件
     import_open = false
     ui.import_panel.set_visible(false)
+    ui.cal_box.set_visible(!about_open)
+    ui.metrics.set_visible(!about_open)
     scan_conflicts()
     refresh_all()
 }
@@ -888,6 +1113,10 @@ fn apply_advice() {
                 // 全天事件不能改期成某个时段 —— 会把整天承诺降级成 1 小时会议，
                 // 语义直接变了。宁可少应用一条，也不动它。
                 if e.all_day { continue }
+                // 带 RRULE 的事件同理：屏幕上只有「首个实例」这一行，但底下是
+                // 一整条重复序列。挪它等于悄悄改掉用户未来所有的例会时间，
+                // 而且 COUNT/UNTIL/BYDAY 的语义还会跟着漂。不动它。
+                if e.rrule != "" { continue }
                 let dp = date_of(e.dtstart)
                 let dpe = date_of(e.dtend)
                 if dpe == "" { dpe = dp }
@@ -901,6 +1130,11 @@ fn apply_advice() {
                     dtend: dpe + "T" + clock_compact(ad.slot_end) + "00" + sfx,
                     location: e.location, description: e.description,
                     organizer: e.organizer, status: e.status, sequence: e.sequence,
+                    // ⚠️ 新建对象必须列全所有字段：Splash 读一个从没写过的键
+                    //    会抛 "property not found in prototype chain"，
+                    //    而且抛错后该实例的**后续写操作全部静默失效**。
+                    rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
+                    dtstamp: e.dtstamp,
                     all_day: false, start_utc: e.start_utc, timezone: e.timezone,
                     start_minutes: ad.slot_start, end_minutes: ad.slot_end
                 }
@@ -925,6 +1159,8 @@ fn cancel_import() {
     // 放弃这次预览 → 一并收起导入面板，回到主列表视图
     import_open = false
     ui.import_panel.set_visible(false)
+    ui.cal_box.set_visible(!about_open)
+    ui.metrics.set_visible(!about_open)
     set_status("已取消，事件库未改动")
     refresh_all()
 }
@@ -1017,8 +1253,15 @@ fn start_import() {
     // 存快照，支持回滚
     save_snapshot(merged)
 
-    set_status("解析 " + ("" + incoming.len()) + " 个：新增 " + ("" + added)
-        + " / 改期 " + ("" + updated) + " / 跳过 " + ("" + skipped) + err_msg())
+    // 有警告时状态条优先报原因：一行放不下「统计 + 具体错误」两套信息，
+    // 而用户此刻更需要知道「为什么少了几个事件」。
+    if errors.len() > 0 {
+        set_status_warn("解析 " + ("" + incoming.len()) + " 个 · 跳过 "
+            + ("" + skipped) + err_msg())
+    } else {
+        set_status("解析 " + ("" + incoming.len()) + " 个：新增 " + ("" + added)
+            + " / 改期 " + ("" + updated) + " / 跳过 " + ("" + skipped))
+    }
     refresh_all()
 }
 
@@ -1099,6 +1342,22 @@ fn tz_label(ev) {
 }
 
 
+// RRULE → 简短中文标签。
+// Splash 没有 contains/starts_with，用 `split(子串).len() > 1` 判断包含关系。
+// ⚠️ 返回的必须是**含中文的短词**，所以渲染端这一项走 font_regular；
+//    千万别塞 `↻` 之类符号，font_code 缺字形会变豆腐块。
+fn rrule_label(r) {
+    if r == "" { return "" }
+    if r.split("FREQ=DAILY").len() > 1 { return "每天重复" }
+    if r.split("FREQ=WEEKLY").len() > 1 { return "每周重复" }
+    if r.split("FREQ=MONTHLY").len() > 1 { return "每月重复" }
+    if r.split("FREQ=YEARLY").len() > 1 { return "每年重复" }
+    if r.split("FREQ=HOURLY").len() > 1 { return "每小时重复" }
+    if r.split("FREQ=MINUTELY").len() > 1 { return "每分钟重复" }
+    return "重复日程"
+}
+
+
 // ── .ev-time 两行：上=开始时间（mono 11.5 ink2），下=结束时间（mono 10.5 ink3）
 //    设计稿：<div class="ev-time">10:00<span class="end">11:00</span></div>
 fn ev_time_start(ev) {
@@ -1150,6 +1409,11 @@ fn ev_meta_items(ev) {
     // ⚠️ 图标（@ · #）一律**拼进文本**，不再做独立 Label：
     //    实测每个 Label 有 ≈7px 水平开销，meta 里 5 个 Label 就是 ~35px ——
     //    正是「Asia/Shanghai」被裁掉的直接原因。拼进去后 meta 只剩 3 个 Label。
+    // ⚠️ 重复标签放在**最前**：它是对语义影响最大的一条属性，
+    //    用户扫一眼列表就得知道「这行不是单次事件」。
+    if ev.rrule != "" {
+        out.push({ ic: "", segs: [ { v: rrule_label(ev.rrule), mono: false } ], tag: true })
+    }
     if ev.all_day {
         out.push({ ic: "", segs: [ { v: "VALUE=DATE", mono: true } ], tag: true })
         if ev.sequence > 0 {
@@ -1230,6 +1494,156 @@ fn today_parts() {
 
 // 已经写进事件库的日期集合 → 用于月历上的小圆点。
 // 返回一个「扁平字符串」，因为 Splash 没有 Set；用 " 20261004 20261005 " 查子串。
+// 是否显示中国的「法定放假 / 调休上班」标记。
+// 「仅国际」模式下必须完全不显示国内的放假安排 —— 否则切到国际节日，
+// 格子里的绿点和「班」字还杵在那儿，等于切了个寂寞。
+// 这个判断收在 holiday_kind 一处，月历格子、说明行、仪表盘全都自动跟着走。
+fn cn_holiday_shown() {
+    return festival_mode != 1
+}
+
+
+// 某一天的性质：0 = 普通日 · 1 = 法定放假 · 2 = 调休上班
+// ⚠️ 用 pad2 统一补零再拼 `|YYYYMMDD|`：节假日表是字符串，靠
+//    `search("|日期|")` 命中。两端竖线不能省，否则 "2025101" 会误命中
+//    "20251011"（10 月 11 日调休上班），把整天的判断带偏。
+fn holiday_kind(y, m, d) {
+    if !cn_holiday_shown() { return 0 }
+    let key = "|" + ("" + ipart(y)) + pad2(m) + pad2(d) + "|"
+    if HOLIDAYS.search(key) >= 0 { return 1 }
+    if WORKDAYS.search(key) >= 0 { return 2 }
+    return 0
+}
+
+
+// 当月放假/调休摘要，例如「放假 7 天 · 10/10 上班」；当月没有则返回 ""。
+// 不做「连休区间」推算（需要处理跨月，如 2025 端午 5/31–6/2），
+// 只给放假总天数和需要上班的日期 —— 后者才是真正容易记错、最该被标出来的信息。
+fn month_holiday_note(y, m) {
+    let dim = days_in_month(y, m)
+    let hi = dim + 1
+    let nhol = 0
+    let wd = ""
+    for d in 1..hi {
+        let k = holiday_kind(y, m, d)
+        if k == 1 { nhol = nhol + 1 }
+        if k == 2 {
+            if wd != "" { wd = wd + "、" }
+            wd = wd + ("" + ipart(m)) + "/" + ("" + d)
+        }
+    }
+    if nhol == 0 && wd == "" { return "" }
+    let s = ""
+    if nhol > 0 { s = "放假 " + ("" + nhol) + " 天" }
+    if wd != "" {
+        if s != "" { s = s + " · " }
+        s = s + wd + " 上班"
+    }
+    return s
+}
+
+
+// ── 节日名称查询 ────────────────────────────────────────────────────
+
+// 中国节日：这天落在哪个节日区间里 → 返回名称，否则 ""。
+// CN_SPANS 是 `起|止|名|起|止|名|…`（无空洞，见常量处的说明），按 3 项一组扫描。
+// ⚠️⚠️ 血泪（2026-09-30）：两个坑叠在一起，定位花了很久 ——
+//   ① 索引必须是**整数**。`i = k * 3` 算出来可能是浮点，`parts[i]` 取不到值
+//      （静默失败，不报错！）→ 一律过 ipart()。
+//   ② 字段步长依赖常量的竖线写法。第 ① 条修好却仍然取不到名字，真凶是
+//      常量每行首尾都带竖线、拼出 `||` 空字段，把步长从 3 顶成了 4。
+// 比较用 to_f64 转数字，不用字符串字典序（"20260101" vs "202691" 长度不等时
+//    字典序会给出反直觉结果）。
+fn cn_festival_on(y, m, d) {
+    let parts = CN_SPANS.split("|")
+    let n = parts.len()
+    let key = (("" + ipart(y)) + pad2(m) + pad2(d)).to_f64()
+    for k in 0..13 {
+        let i = ipart(k * 3)
+        let j = ipart(i + 1)
+        let j2 = ipart(i + 2)
+        if j2 >= n { break }
+        let sv = parts[i].to_f64()
+        let ev = parts[j].to_f64()
+        if key >= sv && key <= ev { return parts[j2] }
+    }
+    return ""
+}
+
+
+// 国际节日：固定公历日期，MMDD 精确匹配。索引同样必须 ipart 过。
+fn intl_festival_on(m, d) {
+    let parts = INTL_FIXED.split("|")
+    let n = parts.len()
+    let key = pad2(m) + pad2(d)
+    for k in 0..9 {
+        let i = ipart(k * 2)
+        let j = ipart(i + 1)
+        if j >= n { break }
+        if parts[i] == key { return parts[j] }
+    }
+    return ""
+}
+
+
+// 当前模式下某天的节日名（中国优先）。
+fn festival_on(y, m, d) {
+    if festival_mode == 0 || festival_mode == 2 {
+        let cn = cn_festival_on(y, m, d)
+        if cn != "" { return cn }
+    }
+    if festival_mode == 1 || festival_mode == 2 {
+        return intl_festival_on(m, d)
+    }
+    return ""
+}
+
+
+// 当月节日摘要。
+//   · 只有一个节日 → 带日期，例如「中秋 9/25」（信息量最大，且放得下）
+//   · 两个以上     → **只列名字**，例如「国庆 · 万圣节」
+// 为什么两个以上不写日期：说明行可用宽 ≈359px（412 − 20·2 内边距 − 圆点 − 间距），
+//   11px 下中文 ≈1.35em / ASCII ≈0.9em。带日期的 3 条
+//   「国庆 10/1 · 万圣节 10/31 · 圣诞节 12/25」≈354px 已经贴边，
+//   再加「等 N 个」必爆 → Label 自己折行、被固定高容器裁掉（实测踩过）。
+//   只列名字后最坏情况 ≈209px，任何组合都稳。
+// 连续假期同名只报一次（否则「春节 2/15 · 春节 2/16 · …」刷屏）；
+//   节日名超过 3 个就折叠成「等 N 个」。
+fn festival_note(y, m) {
+    let dim = days_in_month(y, m)
+    let hi = dim + 1
+    let nm1 = ""
+    let d1 = 0
+    let names = ""
+    let cnt = 0
+    let seen = " "
+    for d in 1..hi {
+        let nm = festival_on(y, m, d)
+        if nm == "" { continue }
+        if seen.search(" " + nm + " ") >= 0 { continue }
+        seen = seen + nm + " "
+        cnt = cnt + 1
+        if cnt == 1 { nm1 = nm; d1 = d }
+        if cnt <= 3 {
+            if names != "" { names = names + " · " }
+            names = names + nm
+        }
+    }
+    if cnt == 0 { return "" }
+    if cnt == 1 { return nm1 + " " + ("" + ipart(m)) + "/" + ("" + d1) }
+    if cnt > 3 { names = names + " 等 " + ("" + cnt) + " 个" }
+    return names
+}
+
+
+// 来源按钮的文案
+fn cycle_festival_mode() {
+    festival_mode = festival_mode + 1
+    if festival_mode > 2 { festival_mode = 0 }
+    refresh_all()
+}
+
+
 fn marked_days() {
     let s = " "
     for i in events.len() {
@@ -1330,18 +1744,27 @@ fn cal_cells() {
         let txt = ""
         let kind = 0
         let dot = false
+        // hol: 0 = 普通日 · 1 = 法定放假 · 2 = 调休上班（补班）
+        let hol = 0
+        // fest: 当天有节日（按当前来源模式），但**照常上班** —— 用小黑点标出来。
+        //   区分三种性质正是用户的诉求：「放假标小绿点、正常上班标小黑点、
+        //   调休上班写个『班』字」。国际节日（妇女节/万圣节…）与国内无关，
+        //   不放假，所以只能是小黑点。
+        let fest = false
         if dnum >= 1 && dnum <= dim {
             txt = "" + dnum
             kind = 1
             let cell8 = "" + y + m0 + pad2(dnum)
             if marks.search(" " + cell8 + " ") >= 0 { dot = true }
             if cell8 == today8 { kind = 2 }
+            hol = holiday_kind(y, m, dnum)
+            if hol == 0 && festival_on(y, m, dnum) != "" { fest = true }
         } else if dnum < 1 {
             txt = "" + (pdim + dnum)
         } else {
             txt = "" + (dnum - dim)
         }
-        out.push({ txt: txt, kind: kind, dot: dot })
+        out.push({ txt: txt, kind: kind, dot: dot, hol: hol, fest: fest })
     }
     return out
 }
@@ -1554,8 +1977,8 @@ fn toggle_about() {
     // 关于页当模态用：月历（~300px）+ 指标（~46px）让位。
     // 不让位的话关于面板会落在 y≈960 —— 892px 的窗口里 CC BY 署名和
     // 「清空事件库/收起」两个按钮全在屏幕外（实测）。
-    ui.cal_box.set_visible(!about_open)
-    ui.metrics.set_visible(!about_open)
+    ui.cal_box.set_visible(!about_open && !import_open)
+    ui.metrics.set_visible(!about_open && !import_open)
     refresh_all()
 }
 
@@ -1566,6 +1989,16 @@ fn toggle_import() {
     ui.import_panel.set_visible(import_open)
     ui.about_panel.set_visible(about_open)
     if import_open { ui.entry.set_text("") }
+    // 导入面板同样当模态用：月历 + 指标让位（与 about 同一套路）。
+    // ⚠️⚠️ 血泪（2026-09-30）：**节日说明行 fest_bar（42px）是后加的常驻条**，
+    //    它 + metrics(46px) 一起把「预览 · N 个事件尚未写入 | 取消 | 写入」
+    //    这条确认条挤到 y≈930 —— 892px 的窗口里「写入」按钮**根本点不到**
+    //    （e2e 报 `FAIL: 找不到按钮「写入」`，滚一屏才进布局树）。
+    //    这正是项目里那条铁律：面板显隐必须互斥让位，**任何「让它常驻」的改动
+    //    都要跑一遍 e2e 看回归**。隐藏后导入流程占满视口：
+    //    顶栏 + 工具条 + 面板 204 + 确认条 54 + 状态 52 ≈ 400px，绰绰有余。
+    ui.cal_box.set_visible(!import_open && !about_open)
+    ui.metrics.set_visible(!import_open && !about_open)
     refresh_all()
 }
 
@@ -1586,11 +2019,11 @@ Filler{
 ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
 
     // ══ 头部 .head{padding:26px 20px 18px} ══════════════════
-    View{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 26 bottom: 18}
+    RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 26 bottom: 18}
         draw_bg +: {color: c_card}
 
         // 顶行：左 .kicker，右「关于」文字钮（设计稿语言：无底色、小字 ink3）
-        View{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_card}
+        RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_card}
             // .kicker{10px letter-spacing:.16em uppercase accent margin-bottom:7px}
             Label{width: Fill text: "OCTOSENSE CALENDAR" draw_text.color: c_accent
                 draw_text.text_style: theme.font_code{font_size: 10}}
@@ -1599,7 +2032,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text +: {color: c_ink3 color_hover: c_ink2 color_down: c_ink2 color_hover: c_ink2}}
         }
         // .head h1{27px/600 letter-spacing:-.015em}
-        Label{text: "" + view_year() + " 年 " + ("" + view_month()) + " 月" draw_text.color: c_ink
+        // ⚠️⚠️ 血泪（2026-09-30）：`text:` 里的表达式是**建树时求值一次**，
+        //    静态 Label 之后再也不会更新 —— 翻月时网格、说明行都跟着走，
+        //    唯独这个大标题一直钉在启动时的月份上（实测：翻到 2025-10，
+        //    标题还写着「2026 年 9 月」）。凡是内容随状态变的 Label，
+        //    一律 `:=` 立 id + 在 refresh_all 里 set_text。
+        month_title := Label{text: "" + view_year() + " 年 " + ("" + view_month()) + " 月" draw_text.color: c_ink
             draw_text.text_style: theme.font_bold{font_size: 27}}
         // .head .sub{12.5px ink2 margin-top:5px}
         Label{text: "导入的日程按天归位，重复导入不会重复添加" draw_text.color: c_ink2
@@ -1607,19 +2045,19 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
 
         // .headmeta{margin-top:14px padding-top:12px border-top:1px line}
         Hr{draw_bg +: {color: c_line border_size: 0.0 height: 1.0}}
-        metrics := View{width: Fill height: 46.0 flow: Right spacing: 16 padding: Inset{top: 12}
+        metrics := RoundedView{width: Fill height: 46.0 flow: Right spacing: 16 padding: Inset{top: 12}
             draw_bg +: {color: c_card}
             on_render: || {
                 // .metric .v{19px/600 mono}  .k{10px ink3 uppercase}
-                View{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
+                RoundedView{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
                     Label{text: "" + events.len() draw_text.color: c_ink draw_text.text_style: theme.font_code{font_size: 19}}
                     Label{text: "事件" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
                 }
-                View{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
+                RoundedView{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
                     Label{text: "" + source_count() draw_text.color: c_ink draw_text.text_style: theme.font_code{font_size: 19}}
                     Label{text: "来源" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
                 }
-                View{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
+                RoundedView{width: Fit height: Fit flow: Down draw_bg +: {color: c_card}
                     Label{text: latest_day_label() draw_text.color: c_ink draw_text.text_style: theme.font_code{font_size: 19}}
                     Label{text: "最近" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
                 }
@@ -1629,14 +2067,24 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
 
     // ══ Mini 月历 .cal{padding:18px 20px 16px} ═══════════════
     // 加 id：关于页打开时整块让位（见 toggle_about）
-    cal_box := View{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 18 bottom: 16}
+    cal_box := RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 18 bottom: 16}
         draw_bg +: {color: c_card}
 
         // .cal-top{margin-bottom:12px}：左 .ym{14.5px/600}，右 .nav{‹ · › 26x24}
-        View{width: Fill height: Fit flow: Right draw_bg +: {color: c_card}
-            Label{text: "" + view_year() + " · " + ("" + view_month()) draw_text.color: c_ink
+        RoundedView{width: Fill height: Fit flow: Right draw_bg +: {color: c_card}
+            // 同上：翻月会变 → 必须 id + set_text，不能靠建树时求值。
+            cal_ym := Label{text: "" + view_year() + " · " + ("" + view_month()) draw_text.color: c_ink
                 draw_text.text_style: theme.font_bold{font_size: 14}}
             Label{width: Fill text: "" draw_text.color: c_ink3}
+            // 节日来源切换：点一下在「中国 → 国际 → 全部」之间循环。
+            // 文案用 font_regular（含中文，font_code 会渲染成豆腐块）；
+            // 内容是动态的，所以按钮必须静态声明 + 用 set_text 同步（见 refresh_all）。
+            fest_btn := ButtonFlat{text: "节日 中国" height: H_NAV margin: Inset{right: 6}
+                padding: Inset{left: 8 right: 8} on_click: || cycle_festival_mode()
+                draw_bg +: {border_radius: 6.0 color: c_accent_s color_hover: c_accent_s color_down: c_accent_s
+                    border_size: 1.0 border_color: #xf0d9c9}
+                draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent
+                    color_disabled: c_ink3 text_style: theme.font_regular{font_size: 10}}}
             // .nav button{26x24 radius:6 line2 描边 ink2 字}
             ButtonFlat{text: "<" width: 26.0 height: H_NAV padding: Inset{left: 0 right: 0} on_click: || nav_month(-1)
                 draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
@@ -1651,7 +2099,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
 
         // .dow{9.5px gap:2 margin-bottom:5px}
         // ⚠️ 星期头是中文 → 必须用 font_regular；font_code(LiberationMono) 无 CJK 字形（实测豆腐块）。
-        View{width: Fill height: 30.0 flow: Right spacing: 2 padding: Inset{top: 12} draw_bg +: {color: c_card}
+        RoundedView{width: Fill height: 30.0 flow: Right spacing: 2 padding: Inset{top: 12} draw_bg +: {color: c_card}
             Label{width: Fill height: 18.0 text: "一" align: Align{x: 0.5 y: 0.5} draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
             Label{width: Fill height: 18.0 text: "二" align: Align{x: 0.5 y: 0.5} draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
             Label{width: Fill height: 18.0 text: "三" align: Align{x: 0.5 y: 0.5} draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
@@ -1661,14 +2109,14 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             Label{width: Fill height: 18.0 text: "日" align: Align{x: 0.5 y: 0.5} draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
         }
 
-        // .grid{gap:2}  .d{height:34px}
-        // 高度 = 6 × 34 + 5 × 2 = 214
-        grid := View{width: Fill height: 214.0 flow: Down spacing: 2
+        // .grid{gap:2}  .d{height:40px}（原 34 —— 34 装不下「班」字，见文件里 2026-09-30 的说明）
+        // 高度 = 6 × 52 + 5 × 2 = 322
+        grid := RoundedView{width: Fill height: 322.0 flow: Down spacing: 2
             draw_bg +: {color: c_card}
             on_render: || {
                 let cs = cal_cells()
                 for row in 0..6 {
-                    View{width: Fill height: 34.0 flow: Right spacing: 2 draw_bg +: {color: c_card}
+                    RoundedView{width: Fill height: 52.0 flow: Right spacing: 2 draw_bg +: {color: c_card}
                         for col in 0..7 {
                             let c = cs[row * 7 + col]
                             // .d = {height:34, 居中, mono 12.5px}
@@ -1676,23 +2124,75 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                             //   .sel 赤陶浅底 / .has 底部小圆点
                             if c.kind == 2 {
                                 // .d.today：实心墨底白字
-                                View{width: Fill height: 34.0 flow: Down align: Align{x: 0.5 y: 0.5}
+                                RoundedView{width: Fill height: 52.0 flow: Down align: Align{x: 0.5 y: 0.5}
                                     draw_bg +: {color: c_ink border_radius: 7.0}
                                     Label{text: c.txt draw_text.color: #xffffff draw_text.text_style: theme.font_bold{font_size: 12}}
                                 }
                             } else if c.kind == 1 {
-                                // 本月普通
-                                View{width: Fill height: 34.0 flow: Down align: Align{x: 0.5 y: 0.5}
+                                // 本月普通日
+                                // 颜色按当天性质分三档：放假 = 绿、调休上班 = 赤陶（要提醒）、
+                                // 普通 = 次级墨色。
+                                // 底部标记行把「有事件」「放假」「补班」并排而不是竖着堆：
+                                // 格子只有 34px，竖堆三项（点+点+班）会直接溢出。
+                                RoundedView{width: Fill height: 52.0 flow: Down
                                     draw_bg +: {color: c_card border_radius: 7.0}
-                                    Label{text: c.txt draw_text.color: c_ink2 draw_text.text_style: theme.font_code{font_size: 12}}
-                                    // .d.has::after{bottom:3px 3.5px 圆点 accent}
-                                    if c.dot {
-                                        View{width: 3.5 height: 3.5 margin: Inset{top: 3} draw_bg +: {color: c_accent border_radius: 2.0}}
+                                    if c.hol == 1 {
+                                        Label{width: Fill height: 23.0 text: c.txt align: Align{x: 0.5 y: 0.5}
+                                            draw_text.color: c_ok draw_text.text_style: theme.font_bold{font_size: 12}}
+                                    } else if c.hol == 2 {
+                                        Label{width: Fill height: 23.0 text: c.txt align: Align{x: 0.5 y: 0.5}
+                                            draw_text.color: c_accent draw_text.text_style: theme.font_code{font_size: 12}}
+                                    } else {
+                                        Label{width: Fill height: 23.0 text: c.txt align: Align{x: 0.5 y: 0.5}
+                                            draw_text.color: c_ink2 draw_text.text_style: theme.font_code{font_size: 12}}
+                                    }
+                                    // ⚠️⚠️ 标记行必须真的**被分配到 ≥21px**（血泪，2026-09-30）：
+                                    //    否则 Label 里的 CJK 字形会被裁到只剩中间几条横（看着像个小点）。
+                                    //    真正的约束不是这一行写多少，而是**单元格够不够高** ——
+                                    //    上面那个日期 Label 的**自然行盒 ≈ 26px**（写 height: 19/21/23
+                                    //    都压不下去，makepad 取 max(显式, 自然)），它先吃掉 26px，
+                                    //    剩下的才给这一行。实测：
+                                    //      单元格 34 → 本行只剩 8~13px → 「班」= 2px 残片
+                                    //      单元格 46 → 本行 17px          → 仍是残片
+                                    //      单元格 52 → 本行 23px          → 「班」完整清晰 ✅
+                                    //    所以 6 行网格 = 6 × 52 + 5 × 2 = 322（见 grid 的 height）。
+                                    //    另外 align 要用 y: 0.5（垂直居中）；用 y: 0.0 也会把字裁掉。
+                                    //    小方块（CircleView）不受影响，只有文字受此限制。
+                                    RoundedView{width: Fill height: 23.0 flow: Right spacing: 2
+                                        align: Align{x: 0.5 y: 0.5} draw_bg +: {color: #x0000}
+                                        // .d.has::after{bottom:3px 3.5px 圆点 accent}
+                                        if c.dot {
+                                            CircleView{width: 3.5 height: 3.5
+                                                draw_bg +: {color: c_accent border_radius: 0.0}}
+                                        }
+                                        // 放假：小绿点
+                                        if c.hol == 1 {
+                                            CircleView{width: 3.5 height: 3.5
+                                                draw_bg +: {color: c_ok border_radius: 0.0}}
+                                        }
+                                        // 节日但照常上班：小黑点（与「事件点」的赤陶色、
+                                        // 「放假点」的绿色区分开 —— 三色三义，不靠位置猜）
+                                        if c.fest {
+                                            CircleView{width: 3.5 height: 3.5
+                                                draw_bg +: {color: c_ink2 border_radius: 0.0}}
+                                        }
+                                        // 调休上班：一个「班」字。中文必须 font_regular，
+                                        // font_code(LiberationMono) 没有 CJK 字形会变豆腐块。
+                                        if c.hol == 2 {
+                                            // ⚠️ 不要给这个 Label 写 height、也不要用 flow: Right 的
+                                            //    align y=0.0 —— 两者都会让 CJK 字形被裁到只剩中间几条横
+                                            //    （只剩 2~3 个像素，看上去像个小点）。
+                                            //    实测唯一稳定可读的组合：
+                                            //      flow: Right + align: Align{x: 0.5 y: 0.5} + width: Fit（不写 height）
+                                            Label{width: Fit text: "班"
+                                                draw_text.color: c_accent
+                                                draw_text.text_style: theme.font_regular{font_size: 11}}
+                                        }
                                     }
                                 }
                             } else {
                                 // .out：上月/下月，淡色 #c9c3bc
-                                View{width: Fill height: 34.0 flow: Down align: Align{x: 0.5 y: 0.5}
+                                RoundedView{width: Fill height: 52.0 flow: Down align: Align{x: 0.5 y: 0.5}
                                     draw_bg +: {color: c_card border_radius: 7.0}
                                     Label{text: c.txt draw_text.color: #xc9c3bc draw_text.text_style: theme.font_regular{font_size: 12}}
                                 }
@@ -1702,11 +2202,42 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 }
             }
         }
+
+        // ══ 节假日说明行 ═══════════════════════════════════════
+        // 设计稿没有这一行，补它是因为「中国日历看不到放假安排」是硬伤：
+        // 格子上只有绿点/「班」字，说不出「放几天、哪天要补班、是什么节」。
+        //
+        // ⚠️⚠️ 血泪（2026-09-30）：最初这是**单行 on_render**，把「节日 + 放假安排」
+        //    拼成一条 Label。切到「全部」时整串变成
+        //    「国庆 10/1 · 万圣节 10/31 · 放假 7 天 · 10/10 上班」≈ 452px，
+        //    可用宽度只有 ≈359px → Label 自己折行，而容器是**固定 42px**，
+        //    第二行的「班」字被直接裁掉（截图可见半个字）。
+        //    改成**静态两行**：节日一行、放假安排一行，各自都放得下；
+        //    第二行没有内容时用 set_visible(false) 整行让位（隐藏的 widget 不占空间）。
+        //    顺带丢掉 on_render —— 少一处「必须记得 render()」的坑。
+        fest_bar := RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 4}
+            draw_bg +: {color: c_card}
+            // ── 第一行：当月节日 ──
+            RoundedView{width: Fill height: 22.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
+                // 小绿点与格子里的「放假」标记同色同形，起图例作用
+                CircleView{width: 5.0 height: 5.0 margin: Inset{top: 8}
+                    draw_bg +: {color: c_ok border_radius: 0.0}}
+                fest_line := Label{width: Fill text: "" align: Align{x: 0.0 y: 0.5}
+                    draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            }
+            // ── 第二行：放假 / 调休安排（无内容时整行让位）──
+            fest_row2 := RoundedView{width: Fill height: 22.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
+                CircleView{width: 5.0 height: 5.0 margin: Inset{top: 8}
+                    draw_bg +: {color: c_warn border_radius: 0.0}}
+                fest_line2 := Label{width: Fill text: "" align: Align{x: 0.0 y: 0.5}
+                    draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 11}}
+            }
+        }
     }
 
     // ══ 工具条 .tools{padding:12px 20px gap:8} ═══════════════
     // 设计稿只有：导入(主) + 导出(ghost) + 计数(右)
-    View{width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 20 right: 20 top: 12 bottom: 12}
+    RoundedView{width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 20 right: 20 top: 12 bottom: 12}
         draw_bg +: {color: c_paper}
         // .btn-primary{background:ink;color:#fff;border-color:ink}  .btn .ic{mono 11px;opacity .75}
         ButtonFlat{text: "↑ 导入" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
@@ -1718,7 +2249,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_disabled: c_ink3}}
         Label{width: Fill text: "" draw_text.color: c_ink3}
         // .tool-count{11px mono ink3}
-        cnt := View{width: Fit height: H_TAP flow: Right align: Align{x: 1.0 y: 0.5}
+        cnt := RoundedView{width: Fit height: H_TAP flow: Right align: Align{x: 1.0 y: 0.5}
             draw_bg +: {color: c_paper}
             on_render: || {
                 Label{text: "" + display_list().len() + " / " + ("" + events.len())
@@ -1732,17 +2263,22 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     //    `ui.entry.text()` / `set_text()` 全部失效。显隐用 `set_visible()`。
     // ⚠️ 高度必须算够：padding 4+12 + 提示 24 + 间距 8 + 输入框 116 + 间距 8 + 按钮行 32 = 204。
     //    给 186 会把按钮压成 11px（实测）。
-    import_panel := View{width: Fill height: 204.0 flow: Down
+    import_panel := RoundedView{width: Fill height: 204.0 flow: Down
         draw_bg +: {color: c_paper}
-        View{width: Fill height: 204.0 flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+        RoundedView{width: Fill height: 204.0 flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
             draw_bg +: {color: c_paper}
-            Label{text: "把其他日历导出的 .ics 文件内容粘贴进来"
+            // ⚠️ 这行**必须控制在一行内**（可用宽 ≈372px）：面板高度是写死的 204，
+            //    文案一旦折行，Label 变高就会把下面的输入框压扁。
+            //    实测「粘贴 .ics 内容 · 重复日程只显示首个实例」≈319px，安全。
+            //    这里承担「重复日程」的告知职责 —— 状态条是设计稿的单行固定版式，
+            //    往上面加字会换行并被容器裁掉（已踩过），所以信息放在导入前。
+            Label{text: "粘贴 .ics 内容 · 重复日程只显示首个实例"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             entry := TextInput{width: Fill height: 116 empty_text: "BEGIN:VCALENDAR …"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
                     border_radius: 8.0 border_size: 1.0 border_color: c_line2}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3}}
-            View{width: Fill height: 32.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
+            RoundedView{width: Fill height: 32.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
                 ButtonFlat{text: "取消" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
                     draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper border_size: 1.0 border_color: c_line2}
@@ -1757,9 +2293,9 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     // ══ 写入确认条（有预览时出现）═══
     // ⚠️ 按钮必须**静态声明**：放进 on_render 建出的按钮，on_click 在重建后不会重绑，
     //    点了没反应（实测）。所以这里静态建好，用 set_visible 控制显隐。
-    confirm_bar := View{width: Fill height: 54.0 flow: Down
+    confirm_bar := RoundedView{width: Fill height: 54.0 flow: Down
         draw_bg +: {color: c_paper}
-        View{width: Fill height: 46.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 bottom: 8} padding: Inset{top: 9 bottom: 9 left: 12 right: 12}
+        RoundedView{width: Fill height: 46.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 bottom: 8} padding: Inset{top: 9 bottom: 9 left: 12 right: 12}
             draw_bg +: {color: c_accent_s border_radius: 8.0 border_size: 1.0 border_color: #xf0d9c9}
             preview_label := Label{width: Fill text: "" draw_text.color: #x8a3f16 draw_text.text_style: theme.font_regular{font_size: 12}}
             ButtonFlat{text: "取消" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || cancel_import()
@@ -1777,15 +2313,15 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     // ⚠️ 实测铁律（血泪）：`height: Fit` + on_render **零产出**时，该节点会整个
     //    从布局树消失，并连带扰乱后续兄弟的尺寸分配（Fill 算错）。
     //    所以动态面板一律**显式高度**，空状态也保留占位。
-    status_panel := View{width: Fill height: 52.0 flow: Down
+    status_panel := RoundedView{width: Fill height: 52.0 flow: Down
         draw_bg +: {color: c_paper}
         on_render: || {
-            View{width: Fill height: 44.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: Inset{top: 9 bottom: 9 left: 12 right: 12}
+            RoundedView{width: Fill height: 44.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: Inset{top: 9 bottom: 9 left: 12 right: 12}
                 draw_bg +: {color: status_bg border_radius: 8.0 border_size: 1.0 border_color: status_bd}
                 // ⚠️ 不用字符图标（✓ ✕ 在 LiberationMono / IBMPlexSans 里都没有字形，
                 //    实测渲染成豆腐块）。改成 draw_bg 画的实心圆点，颜色已由 status_fg 三态区分。
-                View{width: 6.0 height: 6.0 margin: Inset{top: 10}
-                    draw_bg +: {color: status_fg border_radius: 3.0}}
+                CircleView{width: 6.0 height: 6.0 margin: Inset{top: 10}
+                    draw_bg +: {color: status_fg border_radius: 0.0}}
                 Label{width: Fill text: status_text align: Align{x: 0.0 y: 0.0} draw_text.color: status_fg
                     draw_text.text_style: theme.font_regular{font_size: 12}}
             }
@@ -1796,9 +2332,9 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     // ⚠️ 与 confirm_bar 同一套路：**静态容器** + set_visible 控制显隐。
     //    原因：① `height: Fit` + on_render 零产出会让节点从布局树消失并扰乱
     //    后续兄弟的 Fill 分配；② on_render 里建出的按钮，重建后 on_click 不重绑 → 点击失效。
-    conflict_panel := View{width: Fill height: Fit flow: Down
+    conflict_panel := RoundedView{width: Fill height: Fit flow: Down
         draw_bg +: {color: c_paper}
-        conflict_bar := View{width: Fill height: 44.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: Inset{left: 12 right: 12}
+        conflict_bar := RoundedView{width: Fill height: 44.0 flow: Right spacing: 8 margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: Inset{left: 12 right: 12}
             draw_bg +: {color: c_warn_s border_radius: 8.0 border_size: 1.0 border_color: #xf0dfc0}
             conflict_label := Label{width: Fill text: "" draw_text.color: c_warn draw_text.text_style: theme.font_bold{font_size: 13}}
             more_btn := ButtonFlat{text: "详情" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || toggle_more()
@@ -1814,9 +2350,9 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     }
 
     // 冲突详情（展开态，静态容器 + 动态文字）
-    conflict_detail := View{width: Fill height: Fit flow: Down
+    conflict_detail := RoundedView{width: Fill height: Fit flow: Down
         draw_bg +: {color: c_paper}
-        View{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 12 spacing: 6
+        RoundedView{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 12 spacing: 6
             draw_bg +: {color: c_warn_s border_radius: 8.0 border_size: 1.0 border_color: #xf0dfc0}
             advice_line := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
             advice_line2 := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
@@ -1827,16 +2363,16 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
 
     // ══ 关于面板 ═════════════════════════════════════
     // ⚠️ 静态容器 + set_visible（同 confirm_bar 套路）：on_render 里的按钮点击不重绑。
-    about_panel := View{width: Fill height: Fit flow: Down
+    about_panel := RoundedView{width: Fill height: Fit flow: Down
         draw_bg +: {color: c_paper}
         // ⚠️ 里面那几行署名的换行数取决于宿主字体宽度（比浏览器宽约 40%），
         //    写死高度必然算错 —— 实测写 192 时「CC BY 4.0」那行和两个按钮
         //    全被挤到窗口外。用 Fit 让内容自己撑开。
-        View{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 14 spacing: 10
+        RoundedView{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 14 spacing: 10
             draw_bg +: {color: c_card border_radius: 10.0 border_size: 1.0 border_color: c_line}
-            View{width: Fill height: 76.0 flow: Right spacing: 12 draw_bg +: {color: c_card}
+            RoundedView{width: Fill height: 76.0 flow: Right spacing: 12 draw_bg +: {color: c_card}
                 Image{width: 72.0 height: 72.0 src: http_resource("{{assets}}/octo-mascot-96.webp") fit: ImageFit.CropToFill}
-                View{width: Fill height: 72.0 flow: Down spacing: 3 draw_bg +: {color: c_card}
+                RoundedView{width: Fill height: 72.0 flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
                     Label{width: Fill text: "版本 0.1.0 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
@@ -1849,7 +2385,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "本应用只申请 storage 能力，数据全部留在本机，不联网。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
-            View{width: Fill height: 30.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
+            RoundedView{width: Fill height: 30.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
                 ButtonFlat{text: "清空事件库" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || clear_all()
                     draw_bg +: {border_radius: 7.0 color: c_card color_hover: #xfdecec color_down: #xfdecec border_size: 1.0 border_color: c_line2}
@@ -1868,13 +2404,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
     // 外层已是 ScrollYView（整页滚动），所以 list 用 Fit 自然高度即可。
     // ⚠️ on_render 必须**必产出内容**（面板打开时给 0.5 占位），
     //    否则 `Fit` 零产出会让节点从布局树消失并扰乱兄弟布局（实测）。
-    list := View{width: Fill height: Fit flow: Down
+    list := RoundedView{width: Fill height: Fit flow: Down
         draw_bg +: {color: c_paper}
         on_render: || {
             let dl = display_list()
             if about_open || import_open {
                 // 面板打开时列表让位：给一个极矮占位，保证节点不消失
-                View{width: Fill height: 0.5 draw_bg +: {color: c_paper}}
+                RoundedView{width: Fill height: 0.5 draw_bg +: {color: c_paper}}
             } else if dl.len() == 0 {
                 // .empty{padding:52px 20px;text-align:center;color:ink3}
                 //   .big{34px;mono;opacity .28;margin-bottom:12px}  h3{14px ink2 500;mb 6px}
@@ -1885,13 +2421,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 //   粘贴进来，点「导入」即可
                 // ⚠️ 不用 `align:` 容器（align 会接管子项排布、导致容器高度算不对，
                 //    实测三个 Label 被压成 132px）。改成每行 width: Fill + Label.align 居中。
-                View{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 52 bottom: 40}
+                RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 52 bottom: 40}
                     draw_bg +: {color: c_paper}
                     // ⚠️ 原设计稿是字符「◌」，但 font_code(LiberationMono) 无此字形 →
                     //    豆腐块。改用 draw_bg 画的空心圆环（透明填充 + 描边），完全等价且可靠。
-                    View{width: Fill height: 46.0 flow: Right align: Align{x: 0.5 y: 0.0}
+                    RoundedView{width: Fill height: 46.0 flow: Right align: Align{x: 0.5 y: 0.0}
                         draw_bg +: {color: c_paper}
-                        View{width: 36.0 height: 36.0 margin: Inset{top: 4}
+                        RoundedView{width: 36.0 height: 36.0 margin: Inset{top: 4}
                             draw_bg +: {color: #x0000 border_radius: 18.0 border_size: 2.0 border_color: c_line2}}
                     }
                     Label{width: Fill height: 22.0 text: "还没有任何日程" align: Align{x: 0.5 y: 0.0}
@@ -1907,7 +2443,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 //    纠正一条先前写反的结论：**写死像素高度**才是把 Label 裁掉的原因
                 //    （Label 在固定高容器里被压扁）；`Fit` 让高度按内容自然撑开。
                 // 注意 font_code(LiberationMono) 无 CJK 字形，故时间列改用 font_regular。
-                View{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 bottom: 20}
+                RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 bottom: 20}
                     draw_bg +: {color: c_paper}
                     for r in build_rows(dl) {
                         if r.t == "day" {
@@ -1915,7 +2451,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                             // .dayhead{gap:9px;padding-bottom:7px;border-bottom:1px line}
                             //    .dn{mono 12/600 ink}  .dw{11 ink3}  .dc{mono 10 ink3;margin-left:auto}
                             // 高度靠 Fit 自然撑开（官方 splash.md:8：容器一律 height: Fit）
-                            View{width: Fill height: Fit flow: Right spacing: 9
+                            RoundedView{width: Fill height: Fit flow: Right spacing: 9
                                 align: Align{x: 0.0 y: 0.5} padding: Inset{top: 18 bottom: 7}
                                 draw_bg +: {color: c_paper}
                                 // ⚠️ r.dl 含中文（「10 月 4 日」）→ 不能用 font_code；r.cnt 含「项」同理。
@@ -1936,17 +2472,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                             //    之前给容器写死像素高度（44/56/68/90 试了 6 轮）→ 内部 Label
                             //    一律被裁（「11:00」和「@ 线上 · UTC」只露上半）。改 Fit 即解。
                             //    官方范例里 Label 也**从不**写 height，行高由 font_size 自然撑开。
-                            View{width: Fill height: Fit flow: Right spacing: 12
+                            RoundedView{width: Fill height: Fit flow: Right spacing: 12
                                 align: Align{x: 0.0 y: 0.0} padding: Inset{top: 11 bottom: 11}
                                 draw_bg +: {color: c_paper}
                                 // .ev-flag{flex:0 0 3px;radius:2px;align-self:stretch}
                                 //   Makepad 无 align-self；用固定高 + 顶部偏移近似「撑满」。
-                                View{width: 3.0 height: 40.0 margin: Inset{top: 1}
+                                RoundedView{width: 3.0 height: 40.0 margin: Inset{top: 1}
                                     draw_bg +: {color: r.fc border_radius: 2.0}}
                                 // .ev-time{flex:0 0 52px} —— 设计稿宽度
                                 // ⚠️ 时间列**不能**用 font_code：全天事件的 r.tm 是「全天」（中文），
                                 //    LiberationMono 无 CJK → 豆腐块。改用 font_regular（含 CJK）。
-                                View{width: 52.0 height: Fit flow: Down
+                                RoundedView{width: 52.0 height: Fit flow: Down
                                     draw_bg +: {color: c_paper}
                                     // 字号按设计稿 .ev-time（11.5px）/ .end（10.5px）取整。
                                     // 「10:00」在 11px 下实测约 49.5px < 52px ✓ 不会裁。
@@ -1958,7 +2494,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                                     }
                                 }
                                 // .ev-body{flex:1}
-                                View{width: Fill height: Fit flow: Down spacing: 2
+                                RoundedView{width: Fill height: Fit flow: Down spacing: 2
                                     draw_bg +: {color: c_paper}
                                     // .ev-title{13.5px ink;line-height 1.4}
                                     Label{width: Fill text: r.sm align: Align{x: 0.0 y: 0.0}
@@ -1967,23 +2503,30 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                                     //   ⚠️ Splash 的 Flow 枚举**没有** Wrap 变体（实测
                                     //     `flow: RightWrap` 报 variable RightWrap not found），
                                     //     故用 `Right`，并靠收紧宽度让内容自己不溢出。
-                                    View{width: Fill height: Fit flow: Right spacing: 10
+                                    RoundedView{width: Fill height: Fit flow: Right spacing: 10
                                         draw_bg +: {color: c_paper}
                                         for m in r.mi {
                                             if m.tag {
                                                 // .tag{mono 9.5px;paper bg;line border;radius 4;padding:1.5px 6px}
-                                                View{width: Fit height: Fit flow: Right align: Align{x: 0.5 y: 0.5}
+                                                RoundedView{width: Fit height: Fit flow: Right align: Align{x: 0.5 y: 0.5}
                                                     padding: Inset{left: 6 right: 6 top: 1 bottom: 1}
                                                     draw_bg +: {color: c_paper border_radius: 4.0 border_size: 1.0 border_color: c_line}
-                                                    // .tag{mono 9.5px} → font_code ✓
+                                                    // 按段选字体：`VALUE=DATE` 走 font_code（贴设计稿的 mono），
+                                                    // 重复规则的中文标签（「每周」）必须 font_regular ——
+                                                    // LiberationMono 无 CJK 字形，会渲染成豆腐块。
                                                     for s in m.segs {
-                                                        Label{width: Fit text: s.v align: Align{x: 0.5 y: 0.5}
-                                                            draw_text.color: c_ink3 draw_text.text_style: theme.font_code{font_size: 9.5}}
+                                                        if s.mono {
+                                                            Label{width: Fit text: s.v align: Align{x: 0.5 y: 0.5}
+                                                                draw_text.color: c_ink3 draw_text.text_style: theme.font_code{font_size: 9.5}}
+                                                        } else {
+                                                            Label{width: Fit text: s.v align: Align{x: 0.5 y: 0.5}
+                                                                draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 9.5}}
+                                                        }
                                                     }
                                                 }
                                             } else {
                                                 // .m{inline-flex;gap:4px}  .m i{mono 10px}
-                                                View{width: Fit height: Fit flow: Right spacing: 4 align: Align{x: 0.0 y: 0.5}
+                                                RoundedView{width: Fit height: Fit flow: Right spacing: 4 align: Align{x: 0.0 y: 0.5}
                                                     draw_bg +: {color: c_paper}
                                                     // 字号 9.0 而非设计稿的 11：宿主字体比浏览器宽很多
                                                     // （font_code≈0.8em / font_regular≈0.9em，中文≈1.35em；

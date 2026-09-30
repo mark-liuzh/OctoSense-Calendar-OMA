@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "subtitle": "粘贴一段 ICS，看清冲突，改完无损导出",
-  "description": "OctoSense 日历把「日历交换」这件小事做完整：粘贴一段 ICS 文本就能导入并看到全部事件；日程一旦撞车会当场标出冲突、指出哪一项该保留、哪一项可以挪走；改完还能原样导出成规范的 ICS 再贴回你原来的日历。\n\n它只做四件事，但每件都做到能核对：\n\n导入 —— 粘贴 ICS（iCalendar）文本，解析 VEVENT，支持全天事件（VALUE=DATE）、时区（TZID）、序列号（SEQUENCE）与转义文本。\n\n冲突 —— 每次刷新都按时间轴重新检查重叠，并按时长量化，例如「重叠 30 分钟」，而不是只丢一个「有冲突」的红灯。\n\n消解 —— 按承诺权重给建议：标题里含「截止 / 提交 / deadline / 答辩」的判为硬承诺，予以保留；带 ORGANIZER 的判为「有约在前」，建议移出并给出可执行的新时段。一次点击应用，改错了还能一键回滚。\n\n导出 —— 输出符合 RFC 5545 的 ICS，并补回 TZID 参数、VALUE=DATE 与 Z（UTC）后缀。判定标准很硬：导出的文本原样再导入一次，应当报告「新增 0 / 改期 0 / 跳过 N」——只要有一个数不为零，就是导出丢了信息。\n\n界面是「档案卷宗」取向：暖白纸底、暖黑墨色、单一赤陶强调色，时间与序号用等宽字。没有账户、没有注册、没有云同步，也没有网络权限。\n\n本应用在 2026 GOSIM Agentic App Hackathon 以队伍 OMA 的名义提交，作为 OctoSense 脚本应用（Splash）的一个完整示例：一份 main.splash、一个 bundle，不引任何第三方运行时依赖。",
+  "subtitle": "粘贴一段 ICS，看清冲突，改完无损导出；节假日放假与调休一眼看清",
+  "description": "OctoSense 日历把「日历交换」这件小事做完整：粘贴一段 ICS 文本就能导入并看到全部事件；日程一旦撞车会当场标出冲突、指出哪一项该保留、哪一项可以挪走；改完还能原样导出成规范的 ICS 再贴回你原来的日历。日历页还内置了中国法定节假日与调休安排，放假、照常上班、补班三种状态分色标出。\n\n它只做五件事，但每件都做到能核对：\n\n导入 —— 粘贴 ICS（iCalendar）文本，解析 VEVENT，支持全天事件（VALUE=DATE）、时区（TZID）、序列号（SEQUENCE）与转义文本。\n\n节假日 —— 内置 2025 / 2026 两年国务院放假安排（离线，因为应用没有网络权限）：放假标小绿点、调休补班标一个「班」字、只过节不放假标深灰小黑点，下方说明行写出「放假 N 天 · M/D 上班」。节日来源可在 中国 / 国际 / 全部 之间切换，切换后标记跟着变。\n\n冲突 —— 每次刷新都按时间轴重新检查重叠，并按时长量化，例如「重叠 30 分钟」，而不是只丢一个「有冲突」的红灯。\n\n消解 —— 按承诺权重给建议：标题里含「截止 / 提交 / deadline / 答辩」的判为硬承诺，予以保留；带 ORGANIZER 的判为「有约在前」，建议移出并给出可执行的新时段。一次点击应用，改错了还能一键回滚。\n\n导出 —— 输出符合 RFC 5545 的 ICS，并补回 TZID 参数、VALUE=DATE 与 Z（UTC）后缀。判定标准很硬：导出的文本原样再导入一次，应当报告「新增 0 / 改期 0 / 跳过 N」——只要有一个数不为零，就是导出丢了信息。\n\n界面是「档案卷宗」取向：暖白纸底、暖黑墨色、单一赤陶强调色，时间与序号用等宽字。没有账户、没有注册、没有云同步，也没有网络权限。\n\n本应用在 2026 GOSIM Agentic App Hackathon 以队伍 OMA 的名义提交，作为 OctoSense 脚本应用（Splash）的一个完整示例：一份 main.splash、一个 bundle，不引任何第三方运行时依赖。",
   "category": "productivity",
   "keywords": [
     "calendar",
@@ -23,13 +23,15 @@
     "screenshots/07-about.png"
   ],
   "icon": "assets/icon.svg",
-  "platforms": ["windows"],
+  "platforms": [
+    "windows"
+  ],
   "publisher": {
     "name": "OMA (mark-liuzh / ody-cai)",
     "support": "https://github.com/mark-liuzh/OctoSense-Calendar-OMA/issues",
     "privacy_policy_url": "https://github.com/mark-liuzh/OctoSense-Calendar-OMA/blob/main/PRIVACY.md"
   },
-  "release_notes": "首个可运行原型：ICS 粘贴导入、冲突检出与按时长量化、按承诺权重的改期建议、无损导出（TZID / VALUE=DATE / Z 全保留）、导入回滚。已在 Windows 上以 tools/run_e2e.sh 与 tools/run_conflict.sh 跑通端到端验证。",
+  "release_notes": "首个可运行原型：ICS 粘贴导入、冲突检出与按时长量化、按承诺权重的改期建议、无损导出（TZID / VALUE=DATE / Z 全保留）、导入回滚；内置 2025/2026 中国法定节假日与调休安排，放假 / 照常上班 / 补班三种状态分色标注，节日来源可在中国 / 国际 / 全部之间切换。已在 Windows 上跑通 5 条端到端流程（基本流程 / 冲突 / 边界字段 / 异常输入 / 节假日，共 100+ 条断言，含截图回读的像素级颜色断言），编译与运行错误数 0。",
   "age_rating": "all",
   "license": "Apache-2.0"
 }

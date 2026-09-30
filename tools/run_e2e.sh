@@ -12,11 +12,14 @@ rm -f "$OUT"/evidence/* 2>/dev/null || true
 # shellcheck source=tools/_env.sh
 . "$ROOT/tools/_env.sh"
 
+static_gate
+
 echo "=== [1/7] 启动宿主 ==="
 echo "python:    $PY"
 echo "card-host: $HOST"
 # 每次清空应用私有数据 → 每次都是「干净首次导入」，结果可复现
 boot_host "$OUT/run.log"
+assert_clean
 echo "宿主就绪"
 
 snap()  { $CURL "http://127.0.0.1:$PORT/snap" -o "$OUT/snap.json"; }

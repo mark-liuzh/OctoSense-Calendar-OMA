@@ -13,10 +13,13 @@ rm -f "$EV"/* 2>/dev/null || true
 # shellcheck source=tools/_env.sh
 . "$ROOT/tools/_env.sh"
 
+static_gate
+
 echo "=== [1/9] 启动宿主 ==="
 echo "python:    $PY"
 echo "card-host: $HOST"
 boot_host "$OUT/run-conflict.log"
+assert_clean
 echo "宿主就绪"
 
 # 截图：加随机参数破缓存（代理/中间层会缓存同一 URL 的响应 → 拿到陈旧帧）
