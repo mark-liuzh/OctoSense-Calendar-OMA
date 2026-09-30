@@ -237,7 +237,9 @@ tools/                  开发与实测工具（不属于应用运行时）
   run_e2e.sh            ① 基本流程实测
   run_conflict.sh       ② 冲突·导出·往返·回滚实测
   e2e.py                远程控制桥驱动（输入/点击/读文本/截图）
-  brace.py quotes.py deps.py   对 main.splash 的静态自检（括号/引号/前向引用）
+  brace.py quotes.py deps.py toplevel.py   对 main.splash 的静态自检
+                                           （括号平衡 / 引号配对 / 前向引用 / 顶层定义）
+  drive.py dump_snap.py        早期驱动脚本与快照解析工具（保留备查）
 seed.ics                基线测试数据（3 个事件，覆盖三种时间写法）
 conflict.ics            冲突测试数据（与 seed 重叠 30 分钟）
 docs/                   实测记录与调研笔记
