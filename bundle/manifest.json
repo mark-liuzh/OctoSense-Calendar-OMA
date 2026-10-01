@@ -4,9 +4,9 @@
   ],
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "e475c858869fdb53982b22780ec211278d97460d7fd1193a50f7a99ca89001fc"
+    "bundle_blake3": "884d1ae252e84da04da71dce4d910c0bbe5c74c6c538251256de33dd70ff99d3"
   },
   "name": "OctoSense 日历",
   "schema": 1,
-  "version": "0.1.0"
+  "version": "0.3.0"
 }

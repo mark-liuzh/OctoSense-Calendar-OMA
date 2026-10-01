@@ -178,31 +178,22 @@ def toolbar_y(s):
 def festival_lines(s):
     """取节假日说明区的两行文本 → (节日行, 放假安排行)。
 
-    ⚠️ 这两行由 refresh_all 用 set_text 推（是静态 Label，但快照里仍然不带 id：
-       `fest_line` / `fest_line2` 的 id 只在 splash 侧可见，快照只给 '-'），
-       所以按坐标定位。定位规则：
-         · ty=Label、宽度 > 80（排除日历格子的日期 16~45px、卡片右上角的
-           「2026 · 10」≈50px、「0 / 0」≈50px）
-         · y 在「日历格子之下、工具条（导入/导出）之上」
-           —— 页头大标题(≈84) 和副标题(≈130) 都远在上面，被 y > 320 挡掉
-       取 y 最小的为节日行，次小的为放假安排行（第二行没内容时会整行让位）。
+    ★ 2026-10-01 改为**按 id 定位**（原来是按坐标猜）。
+
+    为什么必须换：旧规则是「ty=Label、宽>80、y 在 320 与工具条之间，取 y 最小的两个」，
+    靠一句「页头大标题(≈84) 和副标题(≈130) 都远在上面，被 y > 320 挡掉」成立。
+    新的首页在月历**上方**加了一条吉祥物文案（mascot_say，宽 312、y≈321），
+    它成了「y 最小的宽 Label」，于是被当成节日行 —— run_festival 报出来的是
+    「节日行写出中秋 — 实际：今天 9 月 30 日 · 0 个日程…」，看着像产品没渲染，
+    其实产品侧 fest_line 一直都在（快照里也在），只是定位器挑错了控件。
+
+    ⚠️ 旧注释说「这两行的 id 快照里不带，只给 '-'」——**这条已经过时**。
+    用 `:=` 声明过的 Label（fest_line / fest_line2 / mascot_say / egg_today_tag …）
+    快照里都带 id，实测可用。按 id 定位与布局完全解耦，以后再挪位置也不会误判。
     """
-    lim = toolbar_y(s)
-    cand = []
-    for n in s:
-        if n.get("ty") != "Label":
-            continue
-        t = str(n.get("t") or "")
-        r = n.get("r") or [0, 0, 0, 0]
-        if not t.strip() or len(t) > 60:
-            continue
-        if r[2] <= 80 or r[1] <= 320 or r[1] >= lim:
-            continue
-        cand.append((r[1], t))
-    cand.sort()
-    fest = cand[0][1] if len(cand) >= 1 else None
-    hol = cand[1][1] if len(cand) >= 2 else ""
-    return fest, hol
+    a = find_id(s, "fest_line")
+    b = find_id(s, "fest_line2")
+    return (a.get("t") if a else None, b.get("t") if b else "")
 
 
 # 向后兼容：原来只取一行的调用点
@@ -541,6 +532,19 @@ def main():
         for key in ("BEGIN:VCALENDAR", "RRULE:", "DESCRIPTION:", "ORGANIZER:",
                     "TZID=", "VALUE=DATE", "T140000Z", "SEQUENCE:", "UID:"):
             print(f"  {'OK ' if key in txt else 'MISS'} {key}")
+
+    elif cmd == "btn":
+        # 按**按钮文案**点（不是坐标）。用于分区导航（待办/心情/目标/小知识）
+        # 与视图切换（月/周/日）—— 这些按钮的位置会随面板开合而变，
+        # 写死坐标必然扑空，所以只认文案。
+        n, s = wait_btn(sys.argv[2])
+        if n:
+            print(f"click {sys.argv[2]}", click_node(n))
+            time.sleep(0.5)
+        else:
+            print(f"FAIL: 找不到按钮「{sys.argv[2]}」")
+            print("  现有按钮:", buttons_of(s))
+            sys.exit(1)
 
     elif cmd == "click":
         click(float(sys.argv[2]), float(sys.argv[3]))

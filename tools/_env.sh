@@ -81,9 +81,17 @@ CURL="curl -s --noproxy 127.0.0.1 --max-time 20"
 #   toplevel 顶层只允许 fn / let / 一条 start_timeout
 #   deps     建树时求值的前向引用（函数体内前向引用是安全的，不报）
 #   paintfix 「画背景必须用 RoundedView / CircleView / SolidView」规则门禁
+#   btnfocus 每个 ButtonFlat 必须显式写 color_focus（否则点一下就「消失」）
+#   cellhover 月历点击层必须是**半透明**状态色（否则悬停糊掉日期数字）
+#   fncalls  **调用了但从未定义**的函数名（2026-10-01 新增）
+#            —— 这一道是补一个具体伤口：新功能版里 `heat_of` / `todo_count`
+#               被调用却根本没写，deps 抓不到（它们只在运行时上下文里出现），
+#               静态语法也合法，只有真跑才炸，而且报错离真因隔了三层
+#               （on_render 报错 → 月历空白 → refresh_all 中断 → assert_clean
+#                误报「存储不干净」）。
 static_gate() {
   local f="$ROOT/bundle/main.splash" rc=0 out t
-  for t in brace quotes toplevel deps paintfix btnfocus; do
+  for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls; do
     if ! out=$("$PY" "$ROOT/tools/$t.py" "$f" 2>&1); then
       echo "FATAL: 静态门禁 tools/$t.py 未通过：" >&2
       printf '%s\n' "$out" | tail -20 >&2
@@ -91,7 +99,7 @@ static_gate() {
     fi
   done
   [ "$rc" = "0" ] || exit 1
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus 全过"
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls 全过"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
@@ -175,8 +183,15 @@ APP_DATA=""
 
 # ── 启动宿主并等它就绪 ────────────────────────────────────────────────
 # $1 = 日志文件路径
+# $2 = 可选。**复用**某个已有的 app-data 目录（用于「重启后数据还在吗」这类断言）。
+#      ★ 2026-10-01 新增：默认行为一点没变（每次全新目录），只有显式传目录时才复用。
+#        为什么需要它：用户的硬要求是「离线可用、本地优先存储」。要证明这一点，
+#        唯一有说服力的方式是「进程没了 → 新进程把数据读回来」。而在同一个宿主
+#        进程里读内存数组，从来没坏过 —— 那不构成证据。
+#      ⚠️ 复用时**不能**去回收旧目录（下面那句 find -exec rm 会把它自己删掉）。
 boot_host() {
   local log="$1"
+  local reuse="${2:-}"
   kill_host
 
   # ⚠️ 不要用「原地清空 .runtime/app-data」这一招（2026-09-30 定案）。
@@ -187,16 +202,20 @@ boot_host() {
   #    布局树断言却全过（数据是异步 load 进来的），只有像素断言对不上。
   #    ⇒ 改成**每轮换一个全新的存储目录**，旧的尽力删。删不掉也不影响本轮，
   #      整条依赖就此消除。
-  local stamp
-  stamp="$(date +%s)-$$"
-  APP_DATA="$OUT/app-data-$stamp"
-  rm -rf "$APP_DATA" 2>/dev/null || true
-  mkdir -p "$APP_DATA" || true
+  if [ -n "$reuse" ] && [ -d "$reuse" ]; then
+    APP_DATA="$reuse"
+  else
+    local stamp
+    stamp="$(date +%s)-$$"
+    APP_DATA="$OUT/app-data-$stamp"
+    rm -rf "$APP_DATA" 2>/dev/null || true
+    mkdir -p "$APP_DATA" || true
 
-  # 尽力回收历史目录（含旧的 app-data / probe）。删不掉无所谓，不阻塞本轮。
-  find "$OUT" -maxdepth 1 -type d -name 'app-data-*' ! -path "$APP_DATA" \
-    -exec rm -rf {} + 2>/dev/null || true
-  rm -rf "$OUT/app-data" "$OUT/probe" 2>/dev/null || true
+    # 尽力回收历史目录（含旧的 app-data / probe）。删不掉无所谓，不阻塞本轮。
+    find "$OUT" -maxdepth 1 -type d -name 'app-data-*' ! -path "$APP_DATA" \
+      -exec rm -rf {} + 2>/dev/null || true
+    rm -rf "$OUT/app-data" "$OUT/probe" 2>/dev/null || true
+  fi
 
   # 启动前先确认端口是空的 —— 否则新宿主绑不上，探测却打到旧宿主身上，
   # 整轮测试其实在测别人的进程。

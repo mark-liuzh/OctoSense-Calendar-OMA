@@ -7,3 +7,7 @@ target/
 
 # 本地实测产物：宿主运行日志、快照、widget 树、截图、应用私有数据
 .runtime/
+
+# python 字节码缓存（tools/ 下的脚本被 import 时会生成）
+__pycache__/
+*.pyc
