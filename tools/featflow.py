@@ -73,6 +73,20 @@ def text_of(i, s=None):
     return str(n.get("t") or "") if n else None
 
 
+def input_text(i, s=None):
+    """读**输入框**的真实内容。
+
+    ⚠️ 快照里 `t` 是渲染后的显示文本、`val` 才是真实值：输入框为空时
+       `t` 是占位提示（实测 'BEGIN:VCALENDAR …'），`val` 才是 ""。
+       所以校验「写进去了没有」必须看 `val`。
+    """
+    n = node(i, s)
+    if not n:
+        return None
+    v = n.get("val")
+    return str(v if v is not None else n.get("t") or "")
+
+
 def click_id(i, wait=0.7):
     """按 id 点控件。⚠️ 点完页面会滚动（聚焦），所以**每次都重新取快照**。"""
     n = node(i)
@@ -93,12 +107,24 @@ def click_label(label, wait=0.7):
     return True
 
 
-def type_into(i, text, wait=0.6):
-    if not click_id(i, 0.5):
-        return False
-    e2e.type_text(text)
-    time.sleep(wait)
-    return True
+def type_into(i, text, wait=0.6, tries=4):
+    """往输入框打字，并**校验真的写进去了**（写不进就重试）。
+
+    ⚠️ 2026-10-01：原实现只「点一下 + 打字」就无条件返回 True，**从不校验**。
+       宿主的文本输入是「点哪插哪」的插入语义，点击没聚焦 / 渲染抢跑都会让这次
+       输入**静默落空**。后果很隐蔽：胶囊那一步「点封存」后 cap_add() 读到空串
+       直接 return（main.splash:3736），于是「胶囊出现在列表里」报空字符串、
+       capsules.json 也不落盘 —— 而 type_into 自己一路 PASS，把责任推给了应用。
+       改为写完读回 `val` 校验，不符就重试（与 newflow.py 的 type_nt 同一套做法）。
+    """
+    for _ in range(tries):
+        if not click_id(i, 0.5):
+            return False
+        e2e.type_text(text)
+        time.sleep(wait)
+        if text in (input_text(i) or ""):
+            return True
+    return False
 
 
 def cells(s=None):
