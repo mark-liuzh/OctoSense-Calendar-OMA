@@ -68,7 +68,13 @@ assert_clean
 echo "宿主就绪"
 
 echo
-echo "=== [2/9] 默认来源「中国」· 本月（2026 年 9 月）==="
+echo "=== [2/9] 默认来源「中国」· 2026 年 9 月 ==="
+# ★ 2026-10-01：显式**绝对定位**到 2026-09。
+#   应用打开的是**当月**（今天 10-01 → 打开就是 10 月），而这一节以及后面几步的
+#   期望值都是按「进来时是 9 月」写的（中秋 / 放假 3 天 / 9/20 上班）。
+#   原来靠的是一个隐含假设，没有任何一行代码保证它 —— 日期一翻就整体错一格。
+#   改成显式 goto，与「今天几号」解耦：任何设备、任何日期跑都对。
+"$PY" tools/e2e.py goto 2026-09 >/dev/null 2>&1
 F=$("$PY" tools/e2e.py fest 2>&1)
 printf '%s\n' "$F"
 FEST=$(val FEST "$F"); HOL=$(val HOL "$F"); SRC=$(val SRC "$F")
@@ -87,7 +93,7 @@ eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT"    "$D"
 
 echo
 echo "=== [3/9] 翻到 2026 年 10 月（国庆 7 天 + 10/10 补班）==="
-"$PY" tools/e2e.py months 1 >/dev/null 2>&1
+"$PY" tools/e2e.py goto 2026-10 >/dev/null 2>&1
 F=$("$PY" tools/e2e.py fest 2>&1)
 printf '%s\n' "$F"
 FEST=$(val FEST "$F"); HOL=$(val HOL "$F")
@@ -154,8 +160,8 @@ ok     "按钮文案轮转一周无残留"
 
 echo
 echo "=== [7/9] 翻到 2025 年 10 月（2025 数据集：国庆中秋 8 天 + 10/11 补班）==="
-# 起点的 2026-10 往前 12 个月 = 2025-10
-"$PY" tools/e2e.py months -12 >/dev/null 2>&1
+# 2025-10：直接 goto，不再依赖「现在正好在 2026-10」这个前置条件
+"$PY" tools/e2e.py goto 2025-10 >/dev/null 2>&1
 F=$("$PY" tools/e2e.py fest 2>&1)
 printf '%s\n' "$F"
 FEST=$(val FEST "$F"); HOL=$(val HOL "$F"); MONTH=$(val MONTH "$F")
@@ -174,7 +180,7 @@ echo
 echo "=== [8/9] 再往前 1 个月到 2025 年 9 月（9/28 是调休上班日）==="
 # ⚠️ 9/28 属于**九月**，不是十月 —— 断言要落在正确的月份上。
 #    （第一版写成在 10 月里找 9/28，测试自己错了，不是应用错。）
-"$PY" tools/e2e.py months -1 >/dev/null 2>&1
+"$PY" tools/e2e.py goto 2025-09 >/dev/null 2>&1
 F=$("$PY" tools/e2e.py fest 2>&1)
 printf '%s\n' "$F"
 FEST=$(val FEST "$F"); HOL=$(val HOL "$F"); MONTH=$(val MONTH "$F")

@@ -15,7 +15,8 @@
   python e2e.py clear         点「清空事件库」
   python e2e.py export        点「导出」
   python e2e.py cycle         切换节日来源（中国 → 国际 → 全部）
-  python e2e.py months n      月历向后翻 n 个月（n 为负则向前）
+  python e2e.py months n      月历向后翻 n 个月（n 为负则向前）· 闭环，每步校验落点
+  python e2e.py goto YYYY-MM  翻到指定月份（推荐：与「今天几号」解耦）
   python e2e.py fest          打印节日说明行 + 本月放假/调休标记
   python e2e.py dotcolor <png>  回读截图像素，打印每个日期标记的实际颜色
 """
@@ -59,11 +60,19 @@ def type_text(t):
 
 
 def entry_text(s=None):
-    """读输入框当前文本。找不到返回 None 区分「没有输入框」。"""
+    """读输入框的**真实内容**；找不到输入框返回 None（用来区分「没有输入框」）。
+
+    ⚠️⚠️ 2026-10-01 修正字段优先级（原实现按 `t` 优先，是错的）：
+       实测快照里 **`t` 是渲染后的显示文本，`val` 才是真实值**：
+         · 空输入框 → {"t": "BEGIN:VCALENDAR …", "val": ""}
+                      （`t` 是占位提示，17 字符 → 空态被误读成「有 17 个字符」）
+         · 有内容   → {"t": "<内容>", "val": "<内容>"}
+       所以「有没有内容」必须看 `val`。优先取 `val`，再退回其它字段。
+    """
     s = s if s is not None else snap()
     for n in s:
         if n.get("ty") in ("TextInput", "TextInputFlat"):
-            for k in ("t", "v", "text", "value"):
+            for k in ("val", "v", "value", "text", "t"):
                 if k in n and n[k] is not None:
                     return str(n[k])
             return ""
@@ -71,13 +80,39 @@ def entry_text(s=None):
 
 
 def wipe_entry(already_focused=False):
-    """清空输入框：Ctrl+A 全选 → Backspace。
+    """清空输入框：**按当前长度连发退格**，直到文本长度不再变短。
 
-    ⚠️ 为什么必须这么做：宿主的文本输入走 remote.rs 的 route_key/route_text，
-       只发 `Input::Text`，语义是**在光标处插入**，不是替换。所以「先 export 填充、
-       再 fill 同一份 ICS」会把内容灌成两份 —— 实测 1235 字节变 2470 字节、
-       12 个 UID 各出现 2 次，merge_events 认不出这是同一批事件，
-       往返断言（期望新增 0 / 跳过 6）直接失效。
+    背景（宿主的文本输入语义）：输入走 remote.rs 的 route_key/route_text，
+    只发 `Input::Text`，语义是**在光标处插入**，不是替换。所以「先 export 填充、
+    再 fill 同一份 ICS」会把内容灌成两份 —— 实测 1235 字节变 2470 字节、
+    12 个 UID 各出现 2 次，merge_events 认不出这是同一批事件，
+    往返断言（期望新增 0 / 跳过 6）直接失效。
+
+    ⚠️⚠️ 为什么不能再用 Ctrl+A（2026-10-01 macOS 实测**推翻**了原实现）：
+       原实现是「Ctrl+A 全选 → 一次 Backspace」。实测本机宿主上
+       **Ctrl+A 完全没有效果** —— `c=keya&ctrl=1` 和官方文档写的
+       `k=down&c=KeyA&ctrl=1` 两种写法都试过，灌入 8 个字符后按「全选+退格」，
+       只剩 7 个（**只删掉了 1 个字符**）。
+       后果极隐蔽：连续 fill 会把内容**累加**（实测 127 → 123 → 409 → 874 字符
+       逐次追加），run_negative 的四个坏输入夹具全叠进同一个输入框，
+       状态条报出的是**上一个夹具**的错，看起来像应用解析错了，其实输入就不是
+       它以为的那份。
+       退格则稳定可靠：`c=backspace` 每次**恰好删 1 个字符**（实测 ×12 → 恰好少 12）。
+       Windows 上原来 Ctrl+A 是有效的，改成连发退格后**行为不变**（只是多几个请求）
+       —— 因此这个改法是严格更可移植的。
+
+    ⚠️ 判据用 `val`（真实内容），不要用 `t`（显示文本，空态是占位提示里的
+       「BEGIN:VCALENDAR …」，会把空态误判成「有 17 个字符」）。
+
+    ⚠️ 退格与**前向删除交替**发（`c=backspace` + `c=delete`）：
+       退格只删光标**左边**。实测光标停在文字中间时，右边那一截**永远删不掉**，
+       残留会从中间开始（例如 'e//CN\nEND:VCALENDAR…'）；
+       而宿主上「把光标挪到末尾」并不可靠（点击输入框右侧实测无效）。
+       交替发两种删除键，就不依赖光标位置了。
+
+    ⚠️ 结束条件**只能是 `val` 为空**，不能用「长度不再变短」这类启发式：
+       删除请求是异步落地的，`/snap` 可能读到上一帧，宽度一时没变就误判成「到底了」，
+       于是留下残尾（实测：75 字符的夹具清成 76、287 的清成 303、466 的清成 120）。
     """
     s = snap()
     e = find_id(s, "entry")
@@ -85,11 +120,22 @@ def wipe_entry(already_focused=False):
         return False
     if not already_focused:
         click_node(e)
-    _get("/k?c=keya&ctrl=1&wait=1")
-    time.sleep(0.25)
-    _get("/k?c=backspace&wait=1")
-    time.sleep(0.35)
-    return True
+
+    for _ in range(30):
+        cur = entry_text() or ""
+        if cur == "":
+            # ⚠️ 必须先让队列里**剩余的删除键落地**再返回。实测：清空成功后
+            #    紧接着灌入下一份夹具，残余的退格会把刚打进去的字**吃掉**
+            #    （broken-events.ics 实测被清成 0 字符）。
+            time.sleep(2.5)
+            return True                      # 唯一成功判据：真实内容为空
+        n = min(len(cur) + 4, 256)
+        for _ in range(n):
+            _get("/k?c=backspace")
+            _get("/k?c=delete")
+        _get("/k?c=backspace&wait=1")        # 屏障：确证前面那批已被处理
+        time.sleep(0.35)
+    return (entry_text() or "") == ""
 
 
 def btn(s, label):
@@ -168,6 +214,105 @@ def month_heading(s):
         if len(t) <= 20 and "年" in t and "月" in t:
             return t
     return None
+
+
+# ── 月份定位：绝对 + 闭环 ──────────────────────────────────────────────
+# ★ 2026-10-01 新增。背景是一次真实的翻车：
+#   `run_festival.sh` / `newflow.py` 原来**假设「应用打开在 9 月」**，再用相对翻月
+#   （`months 1` / `months -12` / 点一次 `>`）推到期盼的月份。
+#   但应用打开的是**当月**：2026-10-01 打开就是 10 月，于是每个相对位移整体错一格，
+#   run_festival / run_new 大面积断言失败 —— 表象像「翻月丢了一次点击」，
+#   真因是**测试写死了日期**。
+#   （交接文档 §11 记过同类问题，并称 newflow.py 开头有 `months -1` 兜底；
+#     实测**该行并不存在**，那条文档已过时。）
+#
+#   修法不是加 sleep，而是**改用绝对定位**：要测哪个月就 `goto` 哪个月，
+#   与「今天几号」彻底解耦 —— 任何设备、任何日期跑都对。
+def _digits_runs(t):
+    """收集字符串里所有数字段。
+
+    ⚠️ 年月之间隔着一个「年」字，不能只累加**连续**数字，否则读到 2026 就断了
+       （rrule_guard.py 的第一版就栽在这里，返回 None 让翻月循环一次都没跑）。
+    """
+    runs, cur = [], ""
+    for ch in str(t or ""):
+        if ch.isdigit():
+            cur += ch
+        elif cur:
+            runs.append(cur)
+            cur = ""
+    if cur:
+        runs.append(cur)
+    return runs
+
+
+def month_of(s=None):
+    """月历标题 → (年, 月)；读不到返回 None。
+
+    优先按 id `month_title` 取（main.splash 里 `month_title := Label{...}`，快照带 id）；
+    取不到才退回 month_heading() 的启发式（「第一个 ≤20 字且含『年』『月』的 Label」）
+    —— 启发式容易被新加的短文案抢先命中，只作兜底。
+    """
+    s = s if s is not None else snap()
+    n = find_id(s, "month_title")
+    t = str(n.get("t") or "") if n else (month_heading(s) or "")
+    runs = _digits_runs(t)
+    if len(runs) < 2:
+        return None
+    return int(runs[0]), int(runs[1])
+
+
+def _midx(ym):
+    """(年, 月) → 单调递增整数，便于比较与求差。"""
+    return ym[0] * 12 + (ym[1] - 1)
+
+
+def shift_month(ym, k):
+    """(年, 月) 偏移 k 个月。"""
+    t = _midx(ym) + k
+    return (t // 12, t % 12 + 1)
+
+
+def click_month_once(label, before, timeout=4.0, interval=0.25):
+    """点一次翻月按钮，并**等到标题真的变了**。
+
+    返回 (新月份, True)  —— 标题已变化；
+        (before, False) —— 超时未变（这次点击没被宿主处理），调用方应重试。
+
+    `wait_btn` 只保证按钮**存在**，不保证点击被**处理**；上一步点击还在渲染时
+    紧随的点击会被吞掉。本函数只断言「标题变了没有」，不引入任何与平台或渲染
+    速度绑定的时间常量 —— 所以 Windows / macOS / 更慢的机器上行为一致。
+    """
+    n, s = wait_btn(label)
+    if not n:
+        return before, False
+    click_node(n)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ym = month_of()
+        if ym is not None and ym != before:
+            return ym, True
+        time.sleep(interval)
+    return before, False
+
+
+def goto_month(y, m, budget=48):
+    """闭环翻到指定 (年, 月)。已在目标月则一步不动。
+
+    每一轮都按**当前位置**重算方向，所以「漏点」能补、「多走一格」能自己退回来。
+    返回 (实际月份, 是否到达)。
+    """
+    target = (int(y), int(m))
+    cur = month_of()
+    if cur is None:
+        return None, False
+    while cur != target and budget > 0:
+        budget -= 1
+        label = ">" if _midx(target) > _midx(cur) else "<"
+        cur, moved = click_month_once(label, cur)
+        if not moved:
+            time.sleep(0.4)      # 漏点：让宿主喘口气，下一轮再试
+    return cur, cur == target
 
 
 def toolbar_y(s):
@@ -403,12 +548,36 @@ def main():
             print("FAIL: entry 不在树里，先 open")
             return
         click_node(e)
-        # ⚠️ 宿主的文本输入是**追加**语义（remote.rs route_key 只发
-        #    Input::Text，不做替换）。不先清空就把同一份 ICS 灌两次 →
-        #    实测 1235 字节变 2470、UID 各出现 2 次，往返断言直接失效。
-        wipe_entry(already_focused=True)
-        type_text(data)
-        print(f"已灌入 {len(data)} 字节")
+        # ★ 2026-10-01：灌完**校验真实内容**，不符就重来。
+        #   为什么必须校验：清空后队列里可能残留尚未落地的删除键，会把紧接着打进去的
+        #   字**吃掉** —— 实测 broken-events.ics 紧跟在 shell-only.ics 之后就变成 0 字符
+        #   （同一个文件在全新宿主里第一次灌入则完全正常），而状态条报的是上一个夹具的
+        #   错，极具误导性。靠 sleep 猜队列排空时长不可靠（试过 0.4s / 1.2s 都会漏），
+        #   直接比对结果最稳，也与平台无关。
+        got = ""
+        for attempt in range(5):
+            wipe_entry(already_focused=True)
+            type_text(data)
+            # ⚠️ 必须**连续多次**读到完整才算稳：删除键异步落地，刚 type 完立刻读
+            #    往往还是完整的，随后才被队列里残余的删除键吃掉。
+            #    （试过读一次 + sleep 1.5s，会「打地鼠」：这一份对了、下一份又变 0。）
+            #    重试时若输入框已空，wipe_entry 不会再发任何删除键，于是队列自然排空，
+            #    所以这个循环是**收敛**的。
+            stable = 0
+            for _ in range(4):
+                time.sleep(0.9)
+                got = entry_text() or ""
+                if len(got) < len(data):
+                    break
+                stable += 1
+            if stable >= 3:
+                break
+            print("  重试 %d/5：期望 %d 字符，实得 %d"
+                  % (attempt + 1, len(data), len(got)))
+        print("已灌入 %d 字符（实得 %d）" % (len(data), len(got)))
+        if len(got) < len(data):
+            print("FAIL: 灌入内容不完整（输入框里只有 %d / %d 字符）"
+                  % (len(got), len(data)))
 
     elif cmd == "parse":
         n, _ = wait_btn("解析")
@@ -566,16 +735,38 @@ def main():
         print(f"SRC={str(n2.get('t'))}")
         print(f"SRC_BEFORE={before}")
 
-    elif cmd == "months":
-        k = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-        label = ">" if k >= 0 else "<"
-        for _ in range(abs(k)):
-            n, s = wait_btn(label)
-            if not n:
-                print(f"FAIL: 找不到翻月按钮 {label!r}")
-                return
-            click_node(n)
+    elif cmd == "goto":
+        # 绝对定位（推荐）：python e2e.py goto 2026-09
+        # 与「今天几号」无关，任何日期跑都对 —— 测哪个月就 goto 哪个月。
+        if len(sys.argv) < 3 or "-" not in sys.argv[2]:
+            print("FAIL: 用法 e2e.py goto YYYY-MM")
+            return
+        y, m = sys.argv[2].split("-", 1)
+        cur, ok = goto_month(int(y), int(m))
         _emit(snap())
+        print("MONTHS_TARGET=%s MONTHS_ACTUAL=%s" % (
+            sys.argv[2], ("%d-%02d" % cur) if cur else "None"))
+        if not ok:
+            print("FAIL: 未能到达 %s（实际 %s）" % (sys.argv[2], cur))
+
+    elif cmd == "months":
+        # 相对翻月。★ 2026-10-01 改为**闭环**：算出目标月后走 goto_month，
+        # 每一步都校验标题是否真的变了（漏点补点、多走一格倒回来）。
+        # 原来「连点 abs(k) 次、点完就取快照」，把正确性押在「每一次点击都会被
+        # 宿主及时处理」上 —— 那是时序假设，不是契约。
+        k = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        cur = month_of()
+        if cur is None:
+            print("FAIL: 读不到月历标题（形如「2026 年 10 月」）")
+            return
+        target = shift_month(cur, k)
+        cur, ok = goto_month(target[0], target[1])
+        _emit(snap())
+        print("MONTHS_TARGET=%d-%02d MONTHS_ACTUAL=%s" % (
+            target[0], target[1], ("%d-%02d" % cur) if cur else "None"))
+        if not ok:
+            print("FAIL: 翻月未到达目标（目标 %d-%02d，实际 %s）"
+                  % (target[0], target[1], cur))
 
     elif cmd == "fest":
         _emit(snap())

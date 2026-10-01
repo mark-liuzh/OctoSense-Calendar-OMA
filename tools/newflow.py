@@ -94,17 +94,57 @@ def btn_by_text(t):
     return None
 
 
-def click_btn(t):
+def find_btn_scrolling(t, max_scrolls=6, dy=220):
+    """找按钮；找不到就**向下滚动**再找。返回 (节点, 滚动次数)。
+
+    ⚠️ 为什么需要（2026-10-01 macOS 实测）：
+       窗口实际是 **412×847**，而项目文档与既有实测记的视口是 **892px** ——
+       macOS 上矮了 45px。新建面板在 ScrollYView 里，底部那排按钮
+       （保存 / 取消）因此被挤出了视口；而 `/snap` **只返回落在视口里的控件**，
+       于是 `btn_by_text("保存")` 找不到按钮，「事件数=1 / 状态条带每年重复 /
+       最近日程 09-15 / 往返幂等」连锁全挂 —— 表象像保存功能坏了，
+       其实按钮只是不在视野里（Windows 视口够高，看不到这个问题）。
+    """
     n = btn_by_text(t)
+    if n:
+        return n, 0
+    for i in range(1, max_scrolls + 1):
+        e2e.scroll(dy)
+        n = btn_by_text(t)
+        if n:
+            return n, i
+    return None, max_scrolls
+
+
+def click_btn(t):
+    n, scrolled = find_btn_scrolling(t)
     if not n:
-        print("  !! 找不到按钮 %r" % t)
+        print("  !! 找不到按钮 %r（已向下滚动 %d 次查找）" % (t, scrolled))
         return False
     e2e.click_node(n)
     time.sleep(0.45)
+    if scrolled:
+        # 点完**滚回原位**，免得把后续断言的页面位置带偏
+        for _ in range(scrolled):
+            e2e.scroll(-220)
+        time.sleep(0.2)
     return True
 
 
 print("=== A 格可点 + 点中的格子被高亮（画布画出来，不依赖动画器）===")
+# ★ 2026-10-01：先**绝对定位**到 2026-09。
+#   本流程后面每一条断言都按「打开时是 2026-09」写死：
+#     cs[15] = 9-15、cs[21] = 9-21、cs[24]…、点 ">" 之后应落到 10 月、
+#     `months 11` 从 10 月应到 2027-09、`months -11` 应回到 2026-10。
+#   可应用打开的是**当月** —— 2026-10-01 打开就是 10 月，于是整条链整体错一格，
+#   14 项断言连锁失败（表象很像「翻月丢了一次点击」，其实是测试写死了日期）。
+#   原来这里靠的是一个**隐含假设**：没有任何一行代码保证「进来时是 9 月」。
+#   改成显式 goto 之后，与「今天几号」彻底解耦，任何日期跑都对。
+_ym, _ok = e2e.goto_month(2026, 9)
+if not _ok:
+    print("FAIL: 无法定位到 2026-09（实际 %s）" % (_ym,))
+    sys.exit(1)
+print("已定位到 2026 年 9 月（实得 %s）" % (_ym,))
 cs = cells()
 check("识别到 42 个格子按钮", len(cs) == 42, "实得 %d" % len(cs))
 if len(cs) != 42:
@@ -121,22 +161,69 @@ check("第 15 格底 = c_sel_bg #f6dcc7", px_at(p, *center(cs2[15])) == "#f6dcc7
 check("相邻第 14 格仍白底 #ffffff", px_at(p, *center(cs2[14])) == "#ffffff",
       "实得 %s" % px_at(p, *center(cs2[14])))
 
+def nt_text():
+    """读新建面板的「标题」输入框**真实内容**。
+
+    ⚠️ 快照里 `t` 是**显示文本**，输入框为空时 `t` 是占位提示
+       （实测 '这天要做什么？例如「妈妈生日」'），`val` 才是真实值。
+       读 `t` 会把「已清空」误判成「有一串占位文字」。
+    """
+    n = node_by_id("nt_input") or {}
+    v = n.get("val")
+    return str(v if v is not None else n.get("t") or "")
+
+
+def type_nt(text, tries=4):
+    """往标题输入框打字并**校验真的写进去了**（写不进就重试）。
+
+    宿主是「点哪插哪」的插入语义，点击没聚焦 / 渲染抢跑都会让这一次输入落空；
+    固定 sleep 挡不住，直接比对结果最稳。
+    """
+    for _ in range(tries):
+        e2e.click_node(node_by_id("nt_input"))
+        time.sleep(0.3)
+        e2e.type_text(text)
+        time.sleep(0.5)
+        if text in nt_text():
+            return True
+    return False
+
+
+def cycle_repeat_once(tries=6, timeout=3.0):
+    """点一次「重复档位」按钮，**等到按钮文案真的变了**才算这一下生效。
+
+    ⚠️ 为什么必须闭环（2026-10-01 macOS 实测）：
+       原来点完固定 `sleep(0.4)` 就往下走，等于赌「宿主一定处理完了」。
+       实测偶发丢一次点击 → 文案序列变成 ['每天','每周','每周','每月']，
+       于是「循环顺序正确」「状态条报了新建且带每年重复」「2027-09 有事件点」
+       三条**连锁失败**，表象像应用把重复档位算错，其实是测试的点击没落地。
+       本函数只依赖「文案变没变」，不引入与平台 / 渲染速度绑定的时间常量。
+    """
+    before = text_of("nr_btn")
+    for _ in range(tries):
+        n = node_by_id("nr_btn")
+        if not n:
+            return False
+        e2e.click_node(n)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if text_of("nr_btn") != before:
+                return True
+            time.sleep(0.15)
+    return False
+
+
 print("=== B 写标题 + 重复点到「每年」+ 保存 ===")
-e2e.click_node(node_by_id("nt_input"))
-time.sleep(0.3)
-e2e.type_text("妈妈生日")
-time.sleep(0.5)
-check("标题已写入", "妈妈生日" in str((node_by_id("nt_input") or {}).get("t")),
-      str((node_by_id("nt_input") or {}).get("t")))
+type_nt("妈妈生日")
+check("标题已写入", "妈妈生日" in nt_text(), nt_text())
+# ★ 2026-10-01：改为**闭环**点击（`cycle_repeat_once` 每次确认文案真的变了）。
+CYCLE = ["每天", "每周", "每月", "每年"]
 seen = []
-for _ in range(4):
-    # 文案每次都变（不重复→每天→每周→每月→每年），所以按 **id** 点
-    n = node_by_id("nr_btn")
-    e2e.click_node(n)
-    time.sleep(0.4)
+for _ in range(len(CYCLE)):
+    cycle_repeat_once()
     seen.append(text_of("nr_btn"))
 print("     重复按钮文案序列:", seen)
-check("循环顺序正确", seen == ["每天", "每周", "每月", "每年"], str(seen))
+check("循环顺序正确", seen == CYCLE, str(seen))
 click_btn("保存")
 time.sleep(1.0)
 s = e2e.snap()
@@ -181,16 +268,13 @@ check("点第 21 格打开面板且日期 = 2026-09-21",
 #     这条是防回归：pick_cell 原来直接调 open_new_on，而它无条件
 #     `set_text("")` + `new_repeat = 0` —— 用户敲了标题再改日期，标题和
 #     重复档位会被悄悄清掉（未保存输入的数据丢失）。
-e2e.click_node(node_by_id("nt_input"))
-time.sleep(0.3)
-e2e.type_text("换日期不丢字")
-time.sleep(0.5)
+type_nt("换日期不丢字")
 # 重复按钮的文案每次都变（不重复→每天→每周→每月→每年），只能按 **id** 连点。
 # ⚠️ 不能写 click_btn("每年")：按钮此刻显示的还不是「每年」，按文本找必然扑空
 #    （2026-09-30 就这么写过一次，报「找不到按钮 '每年'」）。
 for _ in range(4):
-    e2e.click_node(node_by_id("nr_btn"))
-    time.sleep(0.4)
+    # ★ 2026-10-01：闭环点击（每次确认文案真的变了），不再固定 sleep
+    cycle_repeat_once()
 check("已把重复档位点到「每年」", text_of("nr_btn") == "每年", str(text_of("nr_btn")))
 csD = cells()
 e2e.click(*center(csD[24]))
@@ -198,7 +282,7 @@ time.sleep(0.9)
 ndD = node_by_id("nd_input")
 check("换格后日期已改到 2026-09-24",
       bool(ndD) and "2026-09-24" in str(ndD.get("t")), str(ndD.get("t")) if ndD else "面板没开")
-tit = str((node_by_id("nt_input") or {}).get("t"))
+tit = nt_text()
 check("换格后标题保留（不被清空）", "换日期不丢字" in tit, tit)
 rep = str((node_by_id("nr_btn") or {}).get("t"))
 check("换格后重复档位保留（不被退回不重复）", rep == "每年", rep)

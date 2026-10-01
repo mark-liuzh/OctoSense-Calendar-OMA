@@ -92,11 +92,29 @@ def btn(t, s=None):
 
 
 def click_btn(t):
+    """点按钮；当前视口里找不到就**向下滚动**再找（找点后滚回原位）。
+
+    ⚠️ 为什么需要（2026-10-01 macOS 实测）：窗口实际是 **412×847**，而项目文档与
+       既有实测记的视口是 **892px** —— macOS 上矮了 45px。关于页底部的
+       「清空事件库」因此落在视口之外；而 `/snap` **只返回落在视口里的控件**，
+       于是本函数找不到它，第一步就报「找不到『清空事件库』（关于页没打开？）」，
+       整条 rrule_guard 直接失败 —— 表象像关于页没打开，其实按钮只是不在视野里。
+       Windows 上视口够高，看不到这个问题。
+    """
     n = btn(t)
+    scrolled = 0
+    while not n and scrolled < 6:
+        e2e.scroll(220)
+        scrolled += 1
+        n = btn(t)
     if not n:
         return False
     e2e.click_node(n)
     time.sleep(0.5)
+    for _ in range(scrolled):
+        e2e.scroll(-220)
+    if scrolled:
+        time.sleep(0.2)
     return True
 
 
