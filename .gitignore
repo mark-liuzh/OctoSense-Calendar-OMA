@@ -1,4 +1,7 @@
-build/
+build/*
+# 例外：Submit 草稿（hub issue 正文）要进 git 做团队 review 与历史追溯，
+# 但 *review.json / *bundle.pack.json 这些 hub scan 产物仍是临时文件，继续 ignore。
+!build/SUBMISSION-*.md
 target/
 .local-state/
 *.key
