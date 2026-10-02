@@ -6,8 +6,8 @@
 - **Tag:** v0.3.1
 - **Commit:** 83137a0d27935909146b07576185fd2d58d867a2
 - **Bundle:** bundle/
-- **Bundle digest (blake3):** _[TBD — `hub stamp bundle` 后回填；v0.3.0 时为 `f5688185b1428bbcccee68cfdfa0c32e29f0fab3b62e213c97f4e51b2267a48d`，因本版改动了 `bundle/main.splash` 与 `bundle/listing.json`，新值必不同]_
-- **Publisher signature:** _[TBD — `hub sign-manifest --key-id OMA` 后回填；v0.3.0 时为 `5d591fa6…0c00`]_
+- **Bundle digest (blake3):** `dca5d22abf071903872e3483e88595079d6108b420a7ecd383bf67e816dd507f`
+- **Publisher signature:** `af3dae409d2033482bf1272ddada1a3b7af24bae80cc61d4c6d31beddbce9ea41c79944340ca06e2f2ffe0a40374a29e9c1396e4a52dbaacca8fe34bbd540500`
 
 ### Description
 
@@ -24,7 +24,7 @@
 ### Hub Check Result
 
 ```
-com.oma.octosense.calendar 0.3.1 — _[TBD]_
+com.oma.octosense.calendar 0.3.1 — PASSED
   grants: capabilities {"storage"}, hosts {}, storage 16777216 bytes, agent none
 ```
 
