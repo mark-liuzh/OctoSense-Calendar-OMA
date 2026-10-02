@@ -100,11 +100,15 @@ python3 <workspace>/OctoScript-App-Design-Flow/tools/octo check <此仓库>/bund
 
 ```
 com.oma.octosense.calendar 0.3.0 — PASSED
-  [warning] publisher-signature: unsigned: accountability rests on the hub alone
   grants: capabilities {"storage"}, hosts {}, storage 16777216 bytes, agent none
 ```
 
-`PASSED` 之后只剩「未签名」这一条警告——发布到 App Hub 需要由人用密钥签名，与代码本身无关。
+`PASSED` 且**无任何警告**——本版已由发布者以队伍身份签名（`key_id: OMA`，Ed25519）。
+签名覆盖整个 manifest（含 `integrity.bundle_blake3`），任何人可用公钥独立复核：
+
+```bash
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+```
 
 ## 30 秒看懂它
 
@@ -520,4 +524,4 @@ fill = color.mix(color_focus, focus)
 | 应用 ID | `com.oma.octosense.calendar` |
 | 版本 | `0.3.0` |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 准入检查 | `octo check` → `com.oma.octosense.calendar 0.3.0 — PASSED`（仅余未签名警告） |
+| 准入检查 | `octo check` → `com.oma.octosense.calendar 0.3.0 — PASSED`（无警告；已用队伍密钥 `OMA` 签名） |

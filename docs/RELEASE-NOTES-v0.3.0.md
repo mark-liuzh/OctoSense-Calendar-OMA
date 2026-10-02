@@ -34,11 +34,16 @@
 
 ```
 com.oma.octosense.calendar 0.3.0 — PASSED
-  [warning] publisher-signature: unsigned: accountability rests on the hub alone
   grants: capabilities {"storage"}, hosts {}, storage 16777216 bytes, agent none
 ```
 
-唯一警告是「未签名」——发布到 App Hub 需由人用发布者密钥签名，与代码本身无关。  
+**无任何警告** —— 本版已由发布者以队伍身份签名（`key_id: OMA`，Ed25519）。  
+签名覆盖整个 manifest（含 `integrity.bundle_blake3`），任何人可用公钥独立复核：
+
+```sh
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+```
+
 权限只有 `storage`，**没有网络权限**。
 
 > 本版修掉了一个会让准入**直接失败**的问题：`bundle/manifest.json` 里的完整性戳  
