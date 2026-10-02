@@ -1,12 +1,27 @@
 {
+  "agent": null,
   "capabilities": [
     "storage"
   ],
+  "compute": {
+    "instruction_budget": null,
+    "memory_bytes": null
+  },
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "f5688185b1428bbcccee68cfdfa0c32e29f0fab3b62e213c97f4e51b2267a48d"
+    "bundle_blake3": "f5688185b1428bbcccee68cfdfa0c32e29f0fab3b62e213c97f4e51b2267a48d",
+    "signature": {
+      "key_id": "OMA",
+      "value": "5d591fa61291d521160206bef4a8305ea4705035fc1de62f744feebff3bb32cdd8a797097cbc9d3450f578800f652498ba7f66200a7e2d5fc15bfda4771b0c00"
+    }
   },
   "name": "OctoSense 日历",
+  "network": {
+    "hosts": []
+  },
   "schema": 1,
+  "storage": {
+    "max_bytes": null
+  },
   "version": "0.3.0"
 }
