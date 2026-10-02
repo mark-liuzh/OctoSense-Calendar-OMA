@@ -46,12 +46,11 @@ $(_host_candidates)
 EOF
 fi
 
-if [ -z "${HOST:-}" ]; then
-  echo "FATAL: 找不到 card-host。" >&2
-  echo "       先构建：cd OctoSense-App-Hub && cargo build --release -p octosense-card-host -p octosense-app-hub" >&2
-  echo "       或指定：OCTO_CARD_HOST=/path/to/card-host bash tools/run_e2e.sh" >&2
-  exit 1
-fi
+# ⚠️ card-host 不存在时的报错**不能放在 _env.sh 顶层**（2026-10-02 修复）：
+#    否则 `bash tools/run_all.sh --fast` 会在 source 到这一行时直接 exit 1，
+#    连 static_gate 都跑不到，README 里「只跑静态自检、秒级」的承诺变成空话。
+#    探测本身（上面那一段）保留无害（找到就赋值，找不到就让 HOST 保持空）。
+#    真正需要 HOST 的入口（boot_host）在函数开头自己检查并退出。
 
 # ── 编码 ──────────────────────────────────────────────────────────────
 # ⚠️ Windows 上 Python 的 stdout 默认跟随本地代码页（cp936）。脚本里到处是
@@ -192,6 +191,17 @@ APP_DATA=""
 boot_host() {
   local log="$1"
   local reuse="${2:-}"
+
+  # ★ 2026-10-02 修复：card-host 必需性检查**移到真正启动宿主时**。
+  #    原来放在 _env.sh 顶层会让 `bash tools/run_all.sh --fast` 在 source 阶段
+  #    就被拦死，根本进不到 static_gate。详见函数定义处的注释。
+  if [ -z "${HOST:-}" ]; then
+    echo "FATAL: 找不到 card-host。" >&2
+    echo "       先构建：cd OctoSense-App-Hub && cargo build --release -p octosense-card-host -p octosense-app-hub" >&2
+    echo "       或指定：OCTO_CARD_HOST=/path/to/card-host bash tools/run_e2e.sh" >&2
+    exit 1
+  fi
+
   kill_host
 
   # ⚠️ 不要用「原地清空 .runtime/app-data」这一招（2026-09-30 定案）。

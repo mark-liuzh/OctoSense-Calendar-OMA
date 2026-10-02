@@ -167,9 +167,9 @@ com.oma.octosense.calendar 0.1.0 — PASSED
 
 | 项 | 值 | 上限 | 结果 |
 | --- | --- | --- | --- |
-| `subtitle` | 37 字符 | 80 | OK |
-| `description` | 930 字符 | 4000 | OK |
-| `keywords` | 8 个 | 10 | OK |
+| `subtitle` | 52 字符 | 80 | OK |
+| `description` | 1848 字符 | 4000 | OK |
+| `keywords` | 7 个 | 10 | OK |
 | `screenshots` | 7 张 | 8 | OK |
 
 `icon` 与 7 张截图全部是**纯相对 `.png` / `.svg` 路径**且文件确实存在；
@@ -192,6 +192,19 @@ com.oma.octosense.calendar 0.1.0 — PASSED
 期望值一多就容易变成「跟着实现写测试」。本轮先用新增的 `run_layout`
 （12 个状态全覆盖）兜住几何层面，功能层面的断言作为后续项。
 
+**★ 2026-10-02 补齐**（在 8.1 仍未结案之前，这条先标记为「已修」）：
+- `run_e2e.sh`：引入 `expect()` / `metric_is()` 两个断言函数（与
+  `run_negative.sh` 同款），加 PASS/FAIL 计数器。每步断言当前界面应看到
+  的关键字：空状态「已加载 0 个事件」、打开导入面板「解析」按钮、
+  解析完成「解析 3 个」、写入完成「已写入 3 个事件」+ `metric_events = 3`、
+  列表区至少能看到一个事件标题。
+- `run_conflict.sh`：同样改造，并且**重点加固 README 反复强调的两条硬证据**：
+  `[4/9]` 冲突详情里必须出现「重叠 30 分钟」（量化重叠时长，不是笼统一句
+  「有冲突」），`[7/9]` 往返幂等必须等于「新增 0 / 改期 0 / 跳过 4」
+  （导出不丢信息）。
+- **期望值只取最少的关键字**（不写完整事件标题、不写整段状态文案），
+  避免实现微调（合并行 / 截断 / 改写文案）时把测试拖崩。
+
 ### 8.2 资源加载失败没有硬断言
 
 `run_e2e.sh` 里有一行：
@@ -211,6 +224,33 @@ MapView 里，宿主对资源加载失败**没有稳定的日志格式**，无�
 退一步说，资源是否真的加载出来了，用**截图目视**是更直接的证据 ——
 本次已确认关于页的章鱼吉祥物（`{{assets}}/octo-mascot-96.webp`）正常渲染，
 说明 `{{assets}}` 指向 bundle 根、路径无误。
+
+**★ 2026-10-02 已修**：那段 `grep -i "load failed\|404" ... || true` 已在
+`run_e2e.sh`（[7/7] 错误检查段）被替换为：
+
+```bash
+asset_bad=0
+if grep -qiE "load failed|failed to load|failed to fetch|no such file" "$OUT/run.log"; then
+  echo "FAIL: 宿主日志里出现资源加载失败："
+  grep -inE "load failed|failed to load|failed to fetch|no such file" "$OUT/run.log" | head -5
+  asset_bad=1
+fi
+...
+if [ "$asset_bad" != "0" ]; then
+  echo "DONE（带资源加载失败）"
+  exit 1
+fi
+```
+
+`run_conflict.sh` 也加了同款检查（之前漏了）。具体改动：
+- **去掉裸 `404`**：匹配的是 `load failed` / `failed to load` / `failed to fetch` /
+  `no such file` 四个明确的加载失败措辞，**不再匹配宿主源码 `splash.rs:404:9`
+  这类行号**（这是上一轮假阳性的根因）。
+- **不再 `|| true`**：命中就 `asset_bad=1`，脚本末尾真正 `exit 1`，失败不再 PASS。
+- **不查 `MapView` 内部**：上轮的疑虑「`load failed` 只在 MapView 里，宿主
+  没有稳定的日志格式」其实不成立 —— makepad 的 Image / WebP 解码失败路径
+  同样会写 `load failed` / `failed to fetch`，可被这四个模式命中。
+- 截图目视仍是辅助证据，但**不是唯一证据**：脚本层先硬卡，截图后肉眼复核。
 
 ### 8.3 一条测试脚本的运行期竞态（本轮踩过）
 

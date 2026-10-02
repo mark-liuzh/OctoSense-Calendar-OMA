@@ -322,7 +322,6 @@ let chunk = {}         // 分块解析状态
 let festival_mode = 0
 
 // 状态条三态（对应设计稿 .status / .status.ok / .status.warn）
-let status_text = ""
 let status_icon = "·"        // .si
 let status_bg   = #xfdf0e9   // accent-soft
 let status_bd   = #xf0d9c9
@@ -338,12 +337,6 @@ let status_text = "准备好了"
 
 // 月历当前显示的月份偏移（0 = 本月）
 let month_offset = 0
-
-let ink = #x1c1c1e
-let secondary = #x8e8e93
-let accent = #x0a84ff
-let warn = #xff3b30
-let okc = #x34c759
 
 // ══════════════════════════════════════════════════════════════════
 // ★★ 2026-10-01 新增：分区导航 + 日/周/月视图 + 待办 / 心情 / 目标 / 彩蛋
