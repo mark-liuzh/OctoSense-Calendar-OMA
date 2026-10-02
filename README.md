@@ -5,9 +5,9 @@
 运行在 OctoSense 隔离宿主里的脚本应用（Splash 语言，`bundle/main.splash` 一个文件）。
 没有账户、没有云同步、**没有网络权限**——日程不出这台设备。
 
-| 主界面 | 点格子写日程 | 冲突检出 | 冲突详情与建议 |
+| 主界面 | 点格子写日程 | ICS 导入 | 冲突详情与建议 |
 | --- | --- | --- | --- |
-| ![主界面](bundle/screenshots/01-list.png) | ![点格子写日程](bundle/screenshots/08-new-event.png) | ![冲突检出](bundle/screenshots/03-conflict.png) | ![冲突详情](bundle/screenshots/04-conflict-detail.png) |
+| ![主界面](bundle/screenshots/01-list.png) | ![点格子写日程](bundle/screenshots/08-new-event.png) | ![ICS 导入](bundle/screenshots/02-import.png) | ![冲突详情](bundle/screenshots/04-conflict-detail.png) |
 
 ---
 
@@ -99,7 +99,7 @@ python3 <workspace>/OctoScript-App-Design-Flow/tools/octo check <此仓库>/bund
 本仓库当前输出：
 
 ```
-com.oma.octosense.calendar 0.3.0 — PASSED
+com.oma.octosense.calendar 0.3.1 — PASSED
   grants: capabilities {"storage"}, hosts {}, storage 16777216 bytes, agent none
 ```
 
@@ -522,6 +522,7 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.3.0` |
+| 版本 | `0.3.1`（v0.3.0 的提交前清理 patch；功能与用户可见行为零变化，详见 [`docs/RELEASE-NOTES-v0.3.1.md`](docs/RELEASE-NOTES-v0.3.1.md)） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 准入检查 | `octo check` → `com.oma.octosense.calendar 0.3.0 — PASSED`（无警告；已用队伍密钥 `OMA` 签名） |
+| 准入检查 | `octo check` → `com.oma.octosense.calendar 0.3.1 — PASSED`（无警告；已用队伍密钥 `OMA` 签名） |
+| 提交 issue | [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
