@@ -147,4 +147,6 @@ v0.3.1 是「改完代码后 hub check 会因为 bundle 内容变化而拒绝」
 ## 资产
 
 `octosense-calendar-0.3.1-bundle.zip` 内含完整 `bundle/` 目录。
-sha256：_[TBD — zip 重建后填入]_。
+sha256：`0bf7bb80a5ee4cbf983f5003d515acb5fdf56c6af5af7b961deca7b3568456ed`
+下载：[`octosense-calendar-0.3.1-bundle.zip`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/download/v0.3.1/octosense-calendar-0.3.1-bundle.zip)
+（GitHub release asset id `605554398`）
