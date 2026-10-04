@@ -22,9 +22,10 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install apt dependencies (extended for makepad + link)
-        # v1/v2 婕忎簡 libxcursor-dev / libasound2-dev / libdrm-dev锛?        # 缂栬瘧鑳借繃浣?link 闃舵鎵句笉鍒?.so锛宑argo 閿欒锛歶nable to find library -lXcursor
-        run: |
+      - name: Enable universe and install apt dependencies (v4)
+        # v3 澶辫触鍘熷洜锛氱己 universe 浠撳簱锛坢ain 榛樿鍙惎鐢?main + restricted锛?        # + libasound2-dev 鍦?26.04 涓婂彲鑳芥敼鍚?        run: |
+          sudo apt-get update -qq
+          sudo add-apt-repository -y universe
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             build-essential pkg-config \
@@ -32,8 +33,9 @@ jobs:
             libwayland-dev libxkbcommon-dev libssl-dev \
             libudev-dev libpulse-dev curl python3 git ca-certificates \
             libfontconfig1-dev libfreetype6-dev libdbus-1-dev \
-            # === v3 鏂板锛堜慨 link 閿欒锛?===
-            libxcursor-dev libasound2-dev libdrm-dev
+            # v3 鏂板锛堜慨 link 閿欒锛屼絾 v3 鑷繁鎸備簡锛?            libxcursor-dev libdrm-dev \
+            # v4 鏀瑰悕 + 瀹归敊锛氳瘯涓や釜 ALSA 鍖呭悕
+            libasound2-dev || sudo apt-get install -y -qq libasound-dev
 
       - name: Prepare launcher workspace (sibling repos)
         run: |
@@ -42,7 +44,6 @@ jobs:
           git clone --depth 1 https://github.com/OctoSense-org/OctoSense-App-Hub.git
           git clone --depth 1 https://github.com/OctoSense-org/makepad.git
           git clone --depth 1 https://github.com/OctoSense-org/Octoscript-Makepad.git octoscript-makepad
-          # Renamed to lowercase to match Cargo.toml's "../octoscript/crates/..."
           git clone --depth 1 https://github.com/OctoSense-org/OctoScript.git octoscript
           for p in makepad/widgets octoscript-makepad/crates/octoscript-makepad octoscript/crates/octoscript-ui-l0; do
             if [ -e "OctoSense-App-Hub/../$p" ]; then echo "OK $p"; else echo "MISSING $p"; fi
