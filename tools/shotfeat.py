@@ -128,7 +128,7 @@ EMPTY_HIST = "这一天暂时没有收录"
 
 
 def st_egg():
-    if not tab("小知识"):
+    if not tab("时光"):
         return 1
     # ⚠️ 为什么要往后走：前面的步骤点过日历格子（第 08 步摆「点格子写日程」），
     #    focus 因此被挪到了那一格 —— 而 9 月 15 日三张表都没收录，
@@ -150,7 +150,7 @@ def st_egg():
         if not str((node(i) or {}).get("t") or ""):
             print("FAIL: %s 是空的" % i)
             return 1
-    print("  OK   小知识已就位 · 日期=%r · tag=%r · title=%r"
+    print("  OK   时光分区已就位 · 日期=%r · tag=%r · title=%r"
           % (str((node("egg_date_l") or {}).get("t")),
              str((node("egg_today_tag") or {}).get("t")),
              str((node("egg_today_title") or {}).get("t"))))

@@ -104,17 +104,26 @@ static_gate() {
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
 # 所有端到端流程都假设「空事件库」起步。若上一轮宿主的存储没被清掉，
 # 日历里会凭空多出日程点，断言会对不上，而且报错信息完全指不到真正的原因。
+#
+# ★ 2026-10-03 Windows 兼容补丁：原本单次 texts 期望「已加载 0 个事件」，
+#   Apple silicon macOS 上 splash 1.5 秒就能画完第一帧，断言立刻 PASS。
+#   Windows 裸机上 splash 首次 eval (334 KB) 走 font-atlas + 编译，
+#   通常 4-6 秒才完成 —— 单次 texts 拿到的是 card-host 控制桥 UI（"Card host [remote]"），
+#   永远看不到「已加载 0 个事件」。改为轮询 15 次（间隔 0.7s），单跑不阻塞，全跑不破。
 assert_clean() {
-  local t
-  t=$("$PY" "$ROOT/tools/e2e.py" texts 2>&1)
-  case "$t" in
-    *"已加载 0 个事件"*)
-      echo "前置检查: 存储干净（0 个事件）" ;;
-    *)
-      echo "FATAL: 应用存储不干净，预期「已加载 0 个事件」。实际末尾：" >&2
-      printf '%s\n' "$t" | tail -2 >&2
-      exit 1 ;;
-  esac
+  local t i
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    t=$("$PY" "$ROOT/tools/e2e.py" texts 2>&1)
+    case "$t" in
+      *"已加载 0 个事件"*)
+        echo "前置检查: 存储干净（0 个事件）"
+        return 0 ;;
+    esac
+    sleep 0.7
+  done
+  echo "FATAL: 应用存储不干净，预期「已加载 0 个事件」。实际末尾：" >&2
+  printf '%s\n' "$t" | tail -2 >&2
+  exit 1
 }
 
 # ── 宿主日志里的编译/运行错误数 ───────────────────────────────────────

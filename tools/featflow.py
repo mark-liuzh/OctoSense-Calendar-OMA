@@ -235,7 +235,7 @@ def pick_expected(mmdd, ed, china, terms, hist):
 def main():
     print("=== A 分区导航 ===")
     s = e2e.snap()
-    for lbl in ("日程", "待办", "心情", "目标", "小知识"):
+    for lbl in ("日程", "待办", "心情", "目标", "时光"):
         check("分区按钮「%s」在" % lbl, e2e.btn(s, lbl) is not None)
     check("初始在「日程」：月历标题在", text_of("month_title", s) not in (None, ""),
           str(text_of("month_title", s)))
@@ -323,8 +323,8 @@ def main():
     check("删掉目标后回到空状态", text_of("goal_count") == "还没有目标",
           repr(text_of("goal_count")))
 
-    print("=== E 小知识：与源码数据表交叉校验（每天只显示一条） ===")
-    check("切到小知识", tab("小知识"))
+    print("=== E 时光（原「小知识」）：与源码数据表交叉校验（每天只显示一条） ===")
+    check("切到时光", tab("时光"))
     mt = text_of("month_title") or ""
     dlabel = text_of("egg_date_l") or ""
     m1 = re.search(r"(\d{4})\s*年\s*(\d+)\s*月", mt)
@@ -346,8 +346,12 @@ def main():
         mmdd = "%02d%02d" % (ed.month, ed.day)
         want_today = pick_expected(mmdd, ed, china, terms, hist)
         check("「今日」显示的是源码表里**按优先级**挑的那一条",
-              text_of("egg_today_title") == want_today["title"]
-              and text_of("egg_today_tag") == want_today["tag"],
+              # ⚠️ 2026-10-04：必须 `or ""` 兜底。今天（10-04）中国/国际/节气/历史
+              #    四张表都没收录 → splash 里 egg_today_pick 返回 ("","")，
+              #    `egg_today_card` **整张 set_visible(false)** → 两个节点不在 /snap 里，
+              #    text_of 返回 None。而 pick_expected 这边返回的是 ""，None != "" 会假失败。
+              (text_of("egg_today_title") or "") == want_today["title"]
+              and (text_of("egg_today_tag") or "") == want_today["tag"],
               "\n         期望 tag=%r title=%r\n         实得 tag=%r title=%r"
               % (want_today["tag"], want_today["title"],
                  text_of("egg_today_tag"), text_of("egg_today_title")))
@@ -416,7 +420,7 @@ def main():
     shot("06-mascot")
 
     print("=== H 时间胶囊 ===")
-    check("切到小知识", tab("小知识"))
+    check("切到时光", tab("时光"))
     check("胶囊解封日 = 关注日", "09-30" in (text_of("cap_where") or "") or
           (text_of("cap_where") or "").startswith("解封日"),
           repr(text_of("cap_where")))
@@ -454,7 +458,7 @@ def restore_mode():
     check("已删的目标没有复活", text_of("goal_count") == "还没有目标",
           repr(text_of("goal_count")))
 
-    check("切到小知识", tab("小知识"))
+    check("切到时光", tab("时光"))
     check("时间胶囊从磁盘读回", text_of("cp_t0") == "十月四号交作品",
           repr(text_of("cp_t0")))
 
@@ -511,8 +515,8 @@ def scan_mode():
     click_label("加一步")
     scan("⑰ 目标 · 有子任务 + 进度条")
 
-    tab("小知识")
-    scan("⑱ 小知识 · 今日 + 时间胶囊")
+    tab("时光")
+    scan("⑱ 时光 · 今日 + 时间胶囊")
 
     tab("日程")
     click_label("周")

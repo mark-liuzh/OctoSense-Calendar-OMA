@@ -221,12 +221,12 @@ runpy shotfeat.py goal
 expect_text "目标进度条已到半格" "#####-----"
 shot "11-goal.png"
 
-echo "=== 12 小知识（今日 + 时间胶囊）==="
-e2e btn 小知识
+echo "=== 12 时光（今日 + 时间胶囊）==="
+e2e btn 时光
 runpy shotfeat.py egg
 # 断言「有收录」而不是「分区在」：这一步会往后走到第一个有内容的日子，
 # 只查「解封日」的话，即使它还停在空状态也一样能过。
-expect_text "小知识分区已就绪（时间胶囊在）" "解封日"
+expect_text "时光分区已就绪（时间胶囊在）" "解封日"
 expect_absent "「今日」卡不是空状态（shotfeat 已走到有收录的日子）" "暂时没有收录"
 shot "12-egg.png"
 
