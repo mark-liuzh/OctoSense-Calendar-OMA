@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_dispatch:  # 允许手动触发跑
+  workflow_dispatch:
 
 jobs:
   e2e-ubuntu-2604:
@@ -22,35 +22,69 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install apt dependencies for makepad / Splash host
+      - name: Install apt dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             build-essential pkg-config \
             libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libwayland-dev libxkbcommon-dev libssl-dev \
-            libudev-dev libpulse-dev curl python3 git ca-certificates
+            libudev-dev libpulse-dev curl python3 git ca-certificates \
+            libfontconfig1-dev libfreetype6-dev libdbus-1-dev
+
+      - name: Prepare launcher workspace (sibling repos)
+        # OctoSense-App-Hub/Cargo.toml has [patch] sections that reference
+        # ../makepad, ../octoscript-makepad, ../octoscript as sibling dirs.
+        # Clone all 4 side-by-side with the right names so relative paths resolve.
+        run: |
+          mkdir -p launcher
+          cd launcher
+          git clone --depth 1 https://github.com/OctoSense-org/OctoSense-App-Hub.git
+          git clone --depth 1 https://github.com/OctoSense-org/makepad.git
+          git clone --depth 1 https://github.com/OctoSense-org/Octoscript-Makepad.git octoscript-makepad
+          # Renamed to lowercase "octoscript" to match Cargo.toml's
+          # "../octoscript/crates/octoscript-ui-l0" path. The repo's crates/
+          # lives at root, so the lowercase dir name is what makes it match.
+          git clone --depth 1 https://github.com/OctoSense-org/OctoScript.git octoscript
+          echo "--- sibling layout ---"
+          ls -la
+          echo "--- expected paths exist? ---"
+          for p in makepad/widgets octoscript-makepad/crates/octoscript-makepad octoscript/crates/octoscript-ui-l0; do
+            if [ -e "OctoSense-App-Hub/../$p" ]; then
+              echo "OK ../$p"
+            else
+              echo "MISSING ../$p"
+            fi
+          done
 
       - name: Build card-host and hub
+        working-directory: launcher/OctoSense-App-Hub
         run: |
-          git clone --depth 1 https://github.com/OctoSense-org/OctoSense-App-Hub.git
-          cd OctoSense-App-Hub
-          cargo build --release -p octosense-card-host -p octosense-app-hub 2>&1 | tail -50
+          cargo build --release -p octosense-card-host -p octosense-app-hub
           echo "--- built binaries ---"
-          ls -la target/release/ | grep -E "card-host|hub|octosense" || echo "BINARIES MISSING"
+          ls -la target/release/ | grep -E "card-host|hub|octosense"
+          for bin in card-host hub; do
+            if [ ! -x "target/release/$bin" ]; then
+              echo "FATAL: target/release/$bin missing or not executable"
+              exit 1
+            fi
+            sz=$(stat -c%s "target/release/$bin")
+            echo "OK $bin: ${sz} bytes"
+            [ "$sz" -gt 100000 ] || { echo "FATAL: $bin too small ($sz bytes)"; exit 1; }
+          done
 
       - name: Run static gates (tools/run_all.sh --fast)
         working-directory: OctoSense-Calendar-OMA
         env:
-          OCTO_CARD_HOST: ${{ github.workspace }}/OctoSense-App-Hub/target/release/card-host
-          OCTO_HUB: ${{ github.workspace }}/OctoSense-App-Hub/target/release/hub
+          OCTO_CARD_HOST: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/card-host
+          OCTO_HUB: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/hub
         run: bash tools/run_all.sh --fast
 
       - name: Run full E2E suite (tools/run_all.sh)
         working-directory: OctoSense-Calendar-OMA
         env:
-          OCTO_CARD_HOST: ${{ github.workspace }}/OctoSense-App-Hub/target/release/card-host
-          OCTO_HUB: ${{ github.workspace }}/OctoSense-App-Hub/target/release/hub
+          OCTO_CARD_HOST: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/card-host
+          OCTO_HUB: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/hub
         run: bash tools/run_all.sh
 
       - name: Upload screenshots on failure
@@ -66,5 +100,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: octosense-runlog
-          path: OctoSense-Calendar-OMA/.runtime/
-          if-no-files-found: ignore
+        path: OctoSense-Calendar-OMA/.runtime/
+        if-no-files-found: ignore
