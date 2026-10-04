@@ -22,7 +22,8 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install apt dependencies
+      - name: Install apt dependencies (extended for makepad + link)
+        # v1/v2 婕忎簡 libxcursor-dev / libasound2-dev / libdrm-dev锛?        # 缂栬瘧鑳借繃浣?link 闃舵鎵句笉鍒?.so锛宑argo 閿欒锛歶nable to find library -lXcursor
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
@@ -30,39 +31,27 @@ jobs:
             libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libwayland-dev libxkbcommon-dev libssl-dev \
             libudev-dev libpulse-dev curl python3 git ca-certificates \
-            libfontconfig1-dev libfreetype6-dev libdbus-1-dev
+            libfontconfig1-dev libfreetype6-dev libdbus-1-dev \
+            # === v3 鏂板锛堜慨 link 閿欒锛?===
+            libxcursor-dev libasound2-dev libdrm-dev
 
       - name: Prepare launcher workspace (sibling repos)
-        # OctoSense-App-Hub/Cargo.toml has [patch] sections that reference
-        # ../makepad, ../octoscript-makepad, ../octoscript as sibling dirs.
-        # Clone all 4 side-by-side with the right names so relative paths resolve.
         run: |
           mkdir -p launcher
           cd launcher
           git clone --depth 1 https://github.com/OctoSense-org/OctoSense-App-Hub.git
           git clone --depth 1 https://github.com/OctoSense-org/makepad.git
           git clone --depth 1 https://github.com/OctoSense-org/Octoscript-Makepad.git octoscript-makepad
-          # Renamed to lowercase "octoscript" to match Cargo.toml's
-          # "../octoscript/crates/octoscript-ui-l0" path. The repo's crates/
-          # lives at root, so the lowercase dir name is what makes it match.
+          # Renamed to lowercase to match Cargo.toml's "../octoscript/crates/..."
           git clone --depth 1 https://github.com/OctoSense-org/OctoScript.git octoscript
-          echo "--- sibling layout ---"
-          ls -la
-          echo "--- expected paths exist? ---"
           for p in makepad/widgets octoscript-makepad/crates/octoscript-makepad octoscript/crates/octoscript-ui-l0; do
-            if [ -e "OctoSense-App-Hub/../$p" ]; then
-              echo "OK ../$p"
-            else
-              echo "MISSING ../$p"
-            fi
+            if [ -e "OctoSense-App-Hub/../$p" ]; then echo "OK $p"; else echo "MISSING $p"; fi
           done
 
       - name: Build card-host and hub
         working-directory: launcher/OctoSense-App-Hub
         run: |
           cargo build --release -p octosense-card-host -p octosense-app-hub
-          echo "--- built binaries ---"
-          ls -la target/release/ | grep -E "card-host|hub|octosense"
           for bin in card-host hub; do
             if [ ! -x "target/release/$bin" ]; then
               echo "FATAL: target/release/$bin missing or not executable"
