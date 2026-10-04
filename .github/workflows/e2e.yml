@@ -7,9 +7,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-ubuntu-2604:
-    name: Linux E2E (Ubuntu 26.04)
-    runs-on: ubuntu-26.04
+  e2e-ubuntu-latest:
+    name: Linux E2E (Ubuntu latest LTS)
+    # v5 鏀瑰姩锛歳uns-on 浠?ubuntu-26.04 鏀规垚 ubuntu-latest
+    # 鍘熷洜锛歷4 commit (16ad4818) 瑙﹀彂 0 绉掑け璐ワ紝鎬€鐤?ubuntu-26.04 runner
+    # 褰撴椂涓嶅彲鐢ㄣ€倁buntu-latest 浼氳嚜鍔ㄧ粰褰撳墠 stable LTS锛堥€氬父鏄?24.04锛夈€?    runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
@@ -22,8 +24,8 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Enable universe and install apt dependencies (v4)
-        # v3 澶辫触鍘熷洜锛氱己 universe 浠撳簱锛坢ain 榛樿鍙惎鐢?main + restricted锛?        # + libasound2-dev 鍦?26.04 涓婂彲鑳芥敼鍚?        run: |
+      - name: Enable universe and install apt dependencies (v5)
+        run: |
           sudo apt-get update -qq
           sudo add-apt-repository -y universe
           sudo apt-get update -qq
@@ -33,8 +35,7 @@ jobs:
             libwayland-dev libxkbcommon-dev libssl-dev \
             libudev-dev libpulse-dev curl python3 git ca-certificates \
             libfontconfig1-dev libfreetype6-dev libdbus-1-dev \
-            # v3 鏂板锛堜慨 link 閿欒锛屼絾 v3 鑷繁鎸備簡锛?            libxcursor-dev libdrm-dev \
-            # v4 鏀瑰悕 + 瀹归敊锛氳瘯涓や釜 ALSA 鍖呭悕
+            libxcursor-dev libdrm-dev \
             libasound2-dev || sudo apt-get install -y -qq libasound-dev
 
       - name: Prepare launcher workspace (sibling repos)
