@@ -1,0 +1,70 @@
+name: e2e-linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:  # 允许手动触发跑
+
+jobs:
+  e2e-ubuntu-2604:
+    name: Linux E2E (Ubuntu 26.04)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout OctoSense Calendar
+        uses: actions/checkout@v4
+        with:
+          repository: mark-liuzh/OctoSense-Calendar-OMA
+          path: OctoSense-Calendar-OMA
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install apt dependencies for makepad / Splash host
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config \
+            libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libwayland-dev libxkbcommon-dev libssl-dev \
+            libudev-dev libpulse-dev curl python3 git ca-certificates
+
+      - name: Build card-host and hub
+        run: |
+          git clone --depth 1 https://github.com/OctoSense-org/OctoSense-App-Hub.git
+          cd OctoSense-App-Hub
+          cargo build --release -p octosense-card-host -p octosense-app-hub 2>&1 | tail -50
+          echo "--- built binaries ---"
+          ls -la target/release/ | grep -E "card-host|hub|octosense" || echo "BINARIES MISSING"
+
+      - name: Run static gates (tools/run_all.sh --fast)
+        working-directory: OctoSense-Calendar-OMA
+        env:
+          OCTO_CARD_HOST: ${{ github.workspace }}/OctoSense-App-Hub/target/release/card-host
+          OCTO_HUB: ${{ github.workspace }}/OctoSense-App-Hub/target/release/hub
+        run: bash tools/run_all.sh --fast
+
+      - name: Run full E2E suite (tools/run_all.sh)
+        working-directory: OctoSense-Calendar-OMA
+        env:
+          OCTO_CARD_HOST: ${{ github.workspace }}/OctoSense-App-Hub/target/release/card-host
+          OCTO_HUB: ${{ github.workspace }}/OctoSense-App-Hub/target/release/hub
+        run: bash tools/run_all.sh
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: octosense-screenshots
+          path: OctoSense-Calendar-OMA/bundle/screenshots/
+          if-no-files-found: ignore
+
+      - name: Upload full log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: octosense-runlog
+          path: OctoSense-Calendar-OMA/.runtime/
+          if-no-files-found: ignore
