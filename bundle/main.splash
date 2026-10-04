@@ -502,7 +502,25 @@ let TODOS_FILE = "todos.json"     // 待办 [{uid,text,d8,done}]
 let MOODS_FILE = "moods.json"     // 心情 [{d8,mood,note}]（一天一条，按 d8 覆盖）
 let GOALS_FILE = "goals.json"     // 目标 [{uid,title,due,subs:[{text,done}]}]
 let SHARE_FILE = "share.json"     // 共享范围 "|uid|uid|"
+// ★ v0.4.1：「已归档放弃」的待办 uid 集合，同样是 "|uid|uid|"。
+//   ⚠️⚠️ 为什么不给 todo 对象加一个 `arch` 字段（第一版就是这么写的，已废弃）：
+//       **读一个不存在的属性会 trap**（object_heap.rs:935 "property {} not found
+//       in prototype chain"）。而老数据的 todos.json 里根本没有这个键 ——
+//       于是每次渲染都刷一屏 [E]，正是 2026-10-04 实测到的 9 条报错。
+//       侧表法完全不碰对象形状，老数据天然「未归档」，零 trap 风险。
+//       这也正是本文件对 `shared` / `HOLIDAYS` 一直在用的那套子串集合法。
+let ARCH_FILE  = "archived.json"  // 已归档待办 "|uid|uid|"
 let CAPS_FILE  = "capsules.json"  // 时间胶囊 [{uid,text,unlock,opened}]
+
+// ★ v0.4.1：ICS 导入上限（两道闸，防「外部输入打到不渲染」）。
+//   为什么必须有：解析是**逐字符循环**，而项目里已经有一条实测教训 ——
+//   指令预算打满时报 `[E] script instruction limit exceeded`，
+//   **整块画布直接不渲染**（见下方 view_month 附近的同名注释）。
+//   粘一份几万事件的 .ics 就能把应用打到白屏，这是真正意义上的输入型 DoS。
+//   ① 体积闸（解析前）：挡住绝大部分情况，且省掉解析开销本身。
+//   ② 条数闸（解析后）：体积够小、但 VEVENT 极短时仍可能解析出极多条。
+let ICS_MAX_BYTES  = 262144       // 256 KiB
+let ICS_MAX_EVENTS = 2000         // 单次导入解析出的事件数
 // ★ 2026-10-04「时光日记」新增：当天天气（自己记）。
 //   ⚠️⚠️ 2026-10-04 联网改造：manifest 已加 `net` 能力 + 三个 open-meteo 域名，
 //      宿主实测 `capabilities {"net","storage"}` / `hosts {api.open-meteo.com, ...}`。
@@ -517,10 +535,26 @@ let WX_FILE    = "weather.json"   // 手动天气（离线回退）[{d8, w}]，w
 //      守卫正是 `if wx_live_fetched != 0 { return }` —— 于是**第二次启动
 //      永远不拉网**，缓存里又没有真实数据（旧版只存时间戳），天气就永久消失。
 //      现在：缓存存**行数据本身**，开机先读缓存上屏，再异步拉一次刷新。
-let WX_LIVE    = "wx_live2.json" // 缓存 = 上次成功取到的行数组 [{d8,code,hi,lo}]
+// ★ v0.4.1：缓存升级到「带时间戳的信封」。
+//   旧格式（wx_live2.json）是**裸行数组**，没有任何时间信息 —— 于是一份
+//   三个月前抓的预报会一直被当成「今天的天气」画在格子上，且永远不过期。
+//   新格式 = {fetched_at: <秒>, rows: [{d8,code,hi,lo}]}，读的时候按 TTL 判断新鲜度。
+//   wx_live2.json 仅作一次性平滑迁移读取（见 wx_live_load_cache）。
+let WX_LIVE     = "wx_live3.json" // 缓存 = {fetched_at, rows:[{d8,code,hi,lo}]}
+let WX_LIVE_OLD = "wx_live2.json" // 旧格式（裸行数组，无时间戳）—— 只读一次用于迁移
 let wx_live_rows = []            // 内存行数组（联网/缓存同一份）
 let wx_live_fetched = 0          // 上次成功取数的时间戳（秒，time_now 返的）
 let wx_live_tried = false        // 本会话是否已尝试过拉网（防重复拉，**不复用 fetched**）
+
+// ★ v0.4.1：新鲜度与保留窗口（两个真实缺陷的补丁）
+//   TTL：预报是有保质期的 —— 三天前抓的「明天」不等于明天。
+//        超过 TTL → 丢掉**未来行**（d8 >= 今天），保留历史行（过去的天气是既成
+//        事实，不会变）。丢掉不是白丢：0.5s 后的定时器会重拉一次。
+//   保留窗口：wx_rows_merge 只去重、**从不淘汰**，于是行数只增不减 ——
+//        文件越写越大，而 wx_live_at 是线性扫描且跑在渲染路径上（一帧几十格）。
+//        这里按天裁掉窗口外的行。90 天足够覆盖「往回翻三个月」。
+let WX_TTL_SEC   = 28800          // 8 小时
+let WX_KEEP_DAYS = 90
 
 // ★ 历史天气（2026-10-04）：open-meteo 的 forecast 端点支持 `past_days` ——
 //   一次就能拿「过去 30 天 + 未来 7 天」。为什么必须走 sys.fetch 而不能用 sys.weather：
@@ -553,6 +587,7 @@ let todos = []
 let moods = []
 let goals = []
 let shared = ""       // "|uid|"（与 HOLIDAYS 同一套子串查询法）
+let archived = "|"    // 已归档放弃的待办 uid，形如 "|t101|t107|"（同上）
 let caps = []
 let weathers = []
 // uid 序号：没有取时钟的能力，只能靠只增不减的计数器（同 new_seq 的理由）
@@ -1660,6 +1695,21 @@ fn refresh_all() {
     ui.todo_row3.set_visible(todo_slot_visible(3))
     ui.todo_row4.set_visible(todo_slot_visible(4))
     ui.todo_row5.set_visible(todo_slot_visible(5))
+    // ★ v0.4.1：「改期」「归档」只在**复盘清单**（todo_mode == 2）里出现。
+    //   当天待办视图不需要它们 —— 那天的任务还没过期，谈不上「重新安排」或「放弃」。
+    //   （ButtonFlat 没有声明期 visible 字段，只能像上面那样在 refresh_all 里设。）
+    ui.td_r0.set_visible(todo_mode == 2)
+    ui.td_a0.set_visible(todo_mode == 2)
+    ui.td_r1.set_visible(todo_mode == 2)
+    ui.td_a1.set_visible(todo_mode == 2)
+    ui.td_r2.set_visible(todo_mode == 2)
+    ui.td_a2.set_visible(todo_mode == 2)
+    ui.td_r3.set_visible(todo_mode == 2)
+    ui.td_a3.set_visible(todo_mode == 2)
+    ui.td_r4.set_visible(todo_mode == 2)
+    ui.td_a4.set_visible(todo_mode == 2)
+    ui.td_r5.set_visible(todo_mode == 2)
+    ui.td_a5.set_visible(todo_mode == 2)
     // ── 心情 ──
     ui.mood_where.set_text("当前：" + focus_mmdd())
     ui.mood_month.set_text(mood_month_note())
@@ -2011,11 +2061,31 @@ fn start_import() {
         return
     }
 
-    import_text = text
+    // ★ v0.4.1 闸 ①：体积上限（**解析之前**）。
+    //   超限就整单拒绝、不解析、不动事件库 —— 解析一个超大串本身就会把
+    //   指令预算打满，那时候再拦已经晚了。
+    if text.len() > ICS_MAX_BYTES {
+        set_status_warn("ICS 太大了（" + ("" + (text.len() / 1024))
+            + " KB），上限 256 KB —— 已拒绝，事件库未改动")
+        refresh_all()
+        return
+    }
+
     let c = parse_all(text)
+    let incoming = c.events
+
+    // ★ v0.4.1 闸 ②：条数上限（解析之后、**改动任何状态之前**）。
+    //   放在这里而不是合并之后，是为了保证「拒绝」真的是零副作用。
+    if incoming.len() > ICS_MAX_EVENTS {
+        set_status_warn("解析出 " + ("" + incoming.len())
+            + " 个事件，超过上限 2000 —— 已拒绝，事件库未改动")
+        refresh_all()
+        return
+    }
+
+    import_text = text
     chunk = c
     errors = c.errors
-    let incoming = c.events
 
     if incoming.len() == 0 {
         set_status_warn("没有解析出任何事件" + err_msg())
@@ -3624,9 +3694,13 @@ fn save_todos() {
 }
 
 
+// ★ v0.4.1：所有计数都必须排除**已归档**的条目 —— 归档的语义是
+//   「这件事我不做了，别再拿它烦我」。如果计数还把它算进去，
+//   月历格子上的小圆点、周摘要、当天状态条都会继续被一条「已放弃」的任务污染。
 fn todo_open_count(d8) {
     let n = 0
     for i in todos.len() {
+        if todo_arch_of(todos[i]) { continue }
         if todos[i].d8 == d8 {
             if !todos[i].done { n = n + 1 }
         }
@@ -3638,6 +3712,7 @@ fn todo_open_count(d8) {
 fn todo_done_count(d8) {
     let n = 0
     for i in todos.len() {
+        if todo_arch_of(todos[i]) { continue }
         if todos[i].d8 == d8 {
             if todos[i].done { n = n + 1 }
         }
@@ -3690,6 +3765,10 @@ fn todo_view() {
     let base = []
     for i in todos.len() {
         let t = todos[i]
+        // ★ v0.4.1：已归档的条目在**所有模式**下一律不出现。
+        //   归档 = 这件事我不做了、别再烦我 —— 它还留在 todos.json 里
+        //   （可追溯），但不参与任何列表、计数与排序。
+        if todo_arch_of(t) { continue }
         if todo_mode == 2 {
             // 复盘清单：**跨日期**，只要「超期 + 未完成」
             if t.done { continue }
@@ -3728,6 +3807,8 @@ fn todo_status() {
     if todo_mode == 2 {
         let n = 0
         for i in todos.len() {
+            // v0.4.1：归档的不算「超期未完成」（否则状态条会一直报一条已放弃的账）
+            if todo_arch_of(todos[i]) { continue }
             if !todos[i].done && valid8(todos[i].d8) && todos[i].d8 < today8() { n = n + 1 }
         }
         if n == 0 { return "没有超期未完成的待办，保持住" }
@@ -3779,6 +3860,60 @@ fn prio_btn_label(k) {
 }
 
 
+// ═══ v0.4.1：todo 的字段集**只在这里列一次** ═══════════════════════════
+//  血泪（原注释，保留）：todo_toggle 曾经是「就地重建对象」，漏写 prio 就等于
+//  「勾一下等级被清空」，而且用户很难把两件事联系起来。
+//  所以把所有对象构造收敛到 todo_make **一个出口** ——
+//  以后再加字段，只改这一个函数，任何动作都不可能漏带。
+//  ⚠️⚠️ v0.4.1 追加（用血换来的）：**不要**给 todo 加新字段来存「归档」态。
+//     第一版就是加了 `arch` 字段，结果 **老数据的 todos.json 没有这个键**，
+//     而「读一个不存在的属性会 trap」（object_heap.rs:935 property not found
+//     in prototype chain）→ 每次渲染刷一屏 [E]（实测 9 条）。
+//     归档因此改用**侧表** archived（见 ARCH_FILE 注释）—— 不碰对象形状。
+fn todo_make(uid, text, d8, done, prio) {
+    return { uid: uid, text: text, d8: d8, done: done, prio: prio }
+}
+
+
+// 这条 todo 是不是「已归档放弃」。查侧表，**不读对象字段**（见上）。
+fn todo_arch_of(t) {
+    return archived.search("|" + t.uid + "|") >= 0
+}
+
+
+fn save_archived() {
+    fs.write(ARCH_FILE, archived)
+}
+
+
+// 对第 k 个可见槽位执行一个动作。act ∈ {"toggle", "rearrange"}。
+//   ⚠️ 用「整体重建 + 整体替换」而不是就地改字段 —— 与 3367 行的既定约定一致
+//      （数组里的对象一律整体重建：就地改某些实现下不会触发保存/重画）。
+//   槽位越界 → 直接返回，什么都不做（绝不抛错）。
+fn todo_act(k, act) {
+    let v = todo_view()
+    if k < 0 || k >= v.len() { return }
+    let i = v[k]
+    let out = []
+    for j in todos.len() {
+        if j == i {
+            let t = todos[j]
+            if act == "rearrange" {
+                // 重新安排：截止推到**今天**并清掉完成态 → 离开复盘区、回到当天待办。
+                out.push(todo_make(t.uid, t.text, today8(), false, todo_prio_of(t)))
+            } else {
+                // 默认 = toggle（勾掉 / 取消勾掉）
+                out.push(todo_make(t.uid, t.text, t.d8, !t.done, todo_prio_of(t)))
+            }
+        } else {
+            out.push(todos[j])
+        }
+    }
+    todos = out
+    save_todos()
+}
+
+
 fn todo_add() {
     let t = ui.todo_in.text().trim()
     if t == "" {
@@ -3788,7 +3923,7 @@ fn todo_add() {
     }
     if !valid8(focus_d8) { init_focus() }
     todo_seq = todo_seq + 1
-    todos.push({ uid: "t" + ("" + todo_seq), text: t, d8: focus_d8, done: false, prio: todo_prio })
+    todos.push(todo_make("t" + ("" + todo_seq), t, focus_d8, false, todo_prio))
     save_todos()
     ui.todo_in.set_text("")
     set_status_ok("已加到 " + focus_mmdd() + "：" + t)
@@ -3797,22 +3932,29 @@ fn todo_add() {
 
 
 fn todo_toggle(k) {
+    todo_act(k, "toggle")
+    refresh_all()
+}
+
+
+// ★ v0.4.1 新增：复盘清单的两个动作（原来只有「勾掉 / 删除」）。
+fn todo_rearrange(k) {
+    todo_act(k, "rearrange")
+    set_status_ok("已重新安排到今天 —— 它回到当天待办里了")
+    refresh_all()
+}
+
+
+// 归档放弃：**只动侧表 archived**，todo 本体原样留在 todos.json 里（可追溯），
+// 但从此刻起不参与任何列表、计数与排序。幂等：重复点不会把 uid 塞两遍。
+fn todo_archive(k) {
     let v = todo_view()
     if k < 0 || k >= v.len() { return }
-    let i = v[k]
-    let out = []
-    for j in todos.len() {
-        let t = todos[j]
-        // ⚠️ 重建对象时必须把 prio 带上 —— 漏了就等于「勾一下等级被清空」，
-        //    而且用户很难把两件事联系起来（本项目在 done 字段上踩过同类坑）。
-        if j == i {
-            out.push({ uid: t.uid, text: t.text, d8: t.d8, done: !t.done, prio: todo_prio_of(t) })
-        } else {
-            out.push({ uid: t.uid, text: t.text, d8: t.d8, done: t.done, prio: todo_prio_of(t) })
-        }
-    }
-    todos = out
-    save_todos()
+    let uid = todos[v[k]].uid
+    if todo_arch_of(todos[v[k]]) { return }
+    archived = archived + uid + "|"
+    save_archived()
+    set_status("已归档放弃 —— 这条不再出现在任何列表里")
     refresh_all()
 }
 
@@ -4382,13 +4524,22 @@ fn wx_word(code) {
 }
 
 
+// ★ v0.4.1 修复（真 bug，用户反馈）：原来这里写的是
+//     `if code >= 71 && code <= 86 { return "雪" }`
+//   —— 把 WMO 的 80/81/82（**阵雨** rain showers）也吞进了「雪」，
+//   于是夏天的一场阵雨会在月历格子里画出一个「雪」字。
+//   现在与 wx_word 的区间**逐段对齐**，两边不会再各说各话：
+//     0 晴 / 1-2 多 / 3 阴 / 45,48 雾 / 51-67 雨 / 71-77 雪 /
+//     80-82 雨（阵雨）/ 85-86 雪（阵雪）/ 95+ 雷
 fn wx_icon(code) {
     if code == 0 { return "晴" }
     if code <= 2 { return "多" }
     if code == 3 { return "阴" }
     if code == 45 || code == 48 { return "雾" }
     if code >= 51 && code <= 67 { return "雨" }
-    if code >= 71 && code <= 86 { return "雪" }
+    if code >= 71 && code <= 77 { return "雪" }
+    if code >= 80 && code <= 82 { return "雨" }
+    if code == 85 || code == 86 { return "雪" }
     if code >= 95 { return "雷" }
     return "·"
 }
@@ -4526,8 +4677,8 @@ fn wx_live_fetch() {
         //   覆盖会把它们抹掉。同 d8 以新值（本次联网）为准。
         wx_live_rows = wx_rows_merge(rows)
         wx_live_fetched = ipart(time_now())
-        // 缓存**行数据本身**（不是时间戳）—— 下次冷启动可离线显示。
-        fs.write(WX_LIVE, wx_live_rows.to_json())
+        // v0.4.1：写「信封」格式（带 fetched_at），由 wx_live_save 顺带瘦身。
+        wx_live_save()
     }
     refresh_all()
 }
@@ -4543,13 +4694,72 @@ fn wx_live_fetch() {
 //      把 parse_json 炸掉，进而掀翻整个 load()（那正是用户见过的白屏）。
 //      旧版手剥 "fetched" 时间戳的写法已随 wx_live.json → wx_live2.json 一起废弃。
 fn wx_live_load_cache() {
-    if !fs.exists(WX_LIVE) { return }
-    let raw = fs.read(WX_LIVE)
+    let raw = ""
+    if fs.exists(WX_LIVE) {
+        raw = fs.read(WX_LIVE)
+    } else if fs.exists(WX_LIVE_OLD) {
+        // 旧格式（裸行数组）：能读，但没有时间戳 → 交给 wx_rows_prune 当「已过期」，
+        // 未来行会被丢掉、只留历史。一次性迁移，之后不会再走到这一支。
+        raw = fs.read(WX_LIVE_OLD)
+    }
     if raw.len() < 2 { return }
-    if substr(raw, 0, 1) != "[" { return }
+    let c0 = substr(raw, 0, 1)
+    // ⚠️ 首字符守卫（沿用 v0.4.0 的教训）：文件被外部改坏 / 写了一半时，
+    //    parse_json 会炸掉整个 load()（那正是用户见过的白屏）。
+    if c0 != "{" && c0 != "[" { return }
     let v = raw.parse_json()
     if v == nil { return }
-    if v.len() > 0 { wx_live_rows = v }
+
+    let rows = []
+    let fetched = 0
+    if c0 == "{" {
+        // 新格式：{fetched_at, rows}
+        if v.rows == nil { return }
+        rows = v.rows
+        if v.fetched_at != nil { fetched = v.fetched_at }
+    } else {
+        // 旧格式：v 本身就是行数组
+        rows = v
+    }
+    if rows.len() == 0 { return }
+    wx_live_rows = wx_rows_prune(rows, fetched)
+    if fetched > 0 { wx_live_fetched = fetched }
+}
+
+
+// ★ v0.4.1：行数组的「保留窗口 + 过期丢预报」瘦身。两个参数：
+//   rows    —— 待瘦身的行数组
+//   fetched —— 这批数据的抓取时间（秒）；<= 0 表示未知（旧格式）→ 当过期处理
+//   返回瘦身后的**新数组**（不改入参）。
+fn wx_rows_prune(rows, fetched) {
+    let today = today8()
+    let floor = add_days(today, -WX_KEEP_DAYS)
+    // 新鲜度：抓取时间未知，或距今超过 TTL → 判为过期
+    let stale = true
+    if fetched > 0 {
+        if (ipart(time_now()) - fetched) <= WX_TTL_SEC { stale = false }
+    }
+    let out = []
+    for i in rows.len() {
+        let r = rows[i]
+        if r.d8 == nil { continue }
+        let d = r.d8
+        if !valid8(d) { continue }
+        if d < floor { continue }            // 超出保留窗口 → 淘汰（防无限增长）
+        if stale && d >= today { continue }  // 过期缓存里的预报 → 丢掉，等重拉
+        out.push(r)
+    }
+    return out
+}
+
+
+// ★ v0.4.1：统一写缓存 —— 写之前先瘦身，保证落到磁盘的永远是「干净的窗口」。
+//   fetched_at 用「现在」，因为这一笔是刚刚从网上取到（或刚并入新行）的。
+fn wx_live_save() {
+    let now = ipart(time_now())
+    let rows = wx_rows_prune(wx_live_rows, now)
+    wx_live_rows = rows
+    fs.write(WX_LIVE, { fetched_at: now, rows: rows }.to_json())
 }
 
 
@@ -4641,7 +4851,8 @@ fn wx_past_fetch() {
     if rows.len() == 0 { return }
     wx_live_rows = wx_rows_merge(rows)
     wx_past_done = true
-    fs.write(WX_LIVE, wx_live_rows.to_json())
+    // v0.4.1：同样走信封写入（历史行不会被 TTL 丢掉 —— TTL 只丢*未来*行）。
+    wx_live_save()
     refresh_all()
 }
 
@@ -5253,30 +5464,68 @@ fn cap_slot_visible(k) {
 // ── 载入旁路存储 ────────────────────────────────────────────────
 // ⚠️ 全部做存在性 + nil 检查：文件可能不存在（首次运行）或被外部改坏。
 //    一个 parse_json 失败就把整个 load() 掀掉，用户看到的是「应用起不来」。
+// ★ v0.4.1：读一个「必须是数组」的旁路文件。
+//   原来这里只查 `v != nil` —— 于是**合法 JSON 但不是数组**的文件
+//   （手工改成了 `{"a":1}`、或写到一半被中断）会把 todos 整个替换成对象，
+//   之后 `todos.len()` / `todos[i].d8` 的行为就没定义了。这属于「静默半坏」：
+//   不报错、不白屏，但待办从此显示不出来，且原因离现场隔了十万八千里。
+//   wx_live2.json 当初正是同类问题把 load() 掀掉、白屏过一次。
+//   守卫沿用同一招：**首字符必须是 "["**（to_json() 写数组必以 "[" 开头，
+//   所以正常文件一个都不会被误伤）。任何异常一律返回 fallback（= 调用方原值），
+//   语义与旧代码的「不动它」完全一致。
+fn read_list_or(path, fallback) {
+    if !fs.exists(path) { return fallback }
+    let raw = fs.read(path)
+    if raw.len() < 2 { return fallback }
+    if substr(raw, 0, 1) != "[" { return fallback }
+    let v = raw.parse_json()
+    if v == nil { return fallback }
+    return v
+}
+
+
 fn load_aux() {
-    if fs.exists(TODOS_FILE) {
-        let v = fs.read(TODOS_FILE).parse_json()
-        if v != nil { todos = v }
+    todos = read_list_or(TODOS_FILE, todos)
+    // ★ v0.4.1：把**老格式**的待办补齐形状。
+    //   老数据（v0.3.x 写的 todos.json）里没有 `prio` 键，而 todo_prio_of 会去读
+    //   `t.prio` —— **读一个不存在的属性会 trap**（object_heap.rs:935
+    //   "property {} not found in prototype chain"）。老数据一旦进复盘清单
+    //   （那里会对所有待办调 todo_sort_key → todo_prio_of）就会刷一屏 [E]。
+    //   判定：本项目的写入路径 todo_make 对**每一行**都写 prio，所以
+    //   「原文里连一个 prio **键**都没有」⇔「这是整批老数据」→ 全部按 0（常规）补齐。
+    //   ★ 只认**带引号带冒号的键**（`"prio":`）而不是裸词 prio —— 否则一条
+    //     正文里含 "prio" 的待办就会让判定漏掉（实测踩过：测试数据里那条
+    //     「老格式没有 prio」的正文直接把判定撑破了）。
+    //     键形式 `"prio":` 不可能自然出现在中文正文里。
+    let traw = ""
+    if fs.exists(TODOS_FILE) { traw = fs.read(TODOS_FILE) }
+    if traw.len() > 2 && traw.search("\"prio\":") < 0 {
+        let fixed = []
+        for i in todos.len() {
+            let t = todos[i]
+            fixed.push(todo_make(t.uid, t.text, t.d8, t.done, 0))
+        }
+        todos = fixed
+        // 一次性迁移：把补齐后的形状写回去，下次启动就不用再补了。
+        // （迁移后再落盘的文件必然含 prio → 上面的判定自然不再命中。）
+        fs.write(TODOS_FILE, todos.to_json())
     }
-    if fs.exists(MOODS_FILE) {
-        let v = fs.read(MOODS_FILE).parse_json()
-        if v != nil { moods = v }
-    }
-    if fs.exists(GOALS_FILE) {
-        let v = fs.read(GOALS_FILE).parse_json()
-        if v != nil { goals = v }
-    }
-    if fs.exists(CAPS_FILE) {
-        let v = fs.read(CAPS_FILE).parse_json()
-        if v != nil { caps = v }
-    }
-    if fs.exists(WX_FILE) {
-        let v = fs.read(WX_FILE).parse_json()
-        if v != nil { weathers = v }
-    }
+    moods = read_list_or(MOODS_FILE, moods)
+    goals = read_list_or(GOALS_FILE, goals)
+    caps  = read_list_or(CAPS_FILE, caps)
+    weathers = read_list_or(WX_FILE, weathers)
     if fs.exists(SHARE_FILE) {
         let v = fs.read(SHARE_FILE)
         if v != nil { shared = v }
+    }
+    // ★ v0.4.1：已归档待办的 uid 集合。读的是**原始文本**（不是 JSON 数组），
+    //   与 share.json 同一套。首字符必须是 "|" —— 空文件 / 被改坏时保留初始的 "|"，
+    //   这样 `search("|uid|")` 只会失配（= 谁都没归档），不会误判成「全都归档了」。
+    if fs.exists(ARCH_FILE) {
+        let v = fs.read(ARCH_FILE)
+        if v != nil {
+            if substr(v, 0, 1) == "|" { archived = v }
+        }
     }
     // 序号从已有条数起步 —— 只增不减，够用（uid 只用来做键，不参与展示）
     todo_seq = todos.len() + 100
@@ -6535,6 +6784,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p0c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t0 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r0 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a0 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x0 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(0)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
@@ -6557,6 +6818,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p1c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t1 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r1 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a1 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x1 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(1)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
@@ -6579,6 +6852,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p2c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t2 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r2 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a2 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x2 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(2)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
@@ -6601,6 +6886,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p3c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t3 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r3 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a3 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x3 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(3)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
@@ -6623,6 +6920,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p4c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t4 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r4 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a4 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x4 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(4)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
@@ -6645,6 +6954,18 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p5c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t5 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_r5 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_rearrange(5)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
+                td_a5 := ButtonFlat{text: "归档" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_archive(5)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xf0f0f4 color_down: #xf0f0f4
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink3 color_hover: c_ink color_down: c_ink color_focus: c_ink3
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_x5 := ButtonFlat{text: "删除" height: 26.0 padding: Inset{left: 10 right: 10}
                     on_click: || todo_del(5)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec

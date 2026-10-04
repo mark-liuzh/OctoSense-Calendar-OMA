@@ -10,7 +10,7 @@
   },
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "f8d9905d9ceb5ea095dbb0f2555941384f7cdf824b7500cf083423954eccf2c6"
+    "bundle_blake3": "cfcf3b9e3236560c92b2c0d328433b7f6648df2bc9d16c2b52f8da9ecbb67bcf"
   },
   "name": "OctoSense 日历",
   "network": {
@@ -24,5 +24,5 @@
   "storage": {
     "max_bytes": null
   },
-  "version": "0.4.0"
+  "version": "0.4.1"
 }

@@ -263,7 +263,18 @@ def main():
           repr(text_of("todo_filter")))
     check("已完成项被过滤掉（td_t0 不在或为空）", text_of("td_t0") in (None, ""),
           repr(text_of("td_t0")))
-    check("切回「全部」", click_id("todo_filter"))
+    # ⚠️ 2026-10-04 修：过滤器是**三态轮转**
+    #    全部 → 只看未完成 → 复盘清单 → 全部（见 main.splash 的 cycle_todo_mode）。
+    #    这里原来只再点**一次**就断言回到「全部」—— 那是两态时代的写法；
+    #    三态之后第二次点击会落到「复盘清单」，条目当然不回来
+    #    （实测：报 `[FAIL] 条目回来了 None` + 状态文案变成复盘档的空态）。
+    #    改成「点到读到『全部』为止」，与档位个数彻底解耦：
+    #    以后再加档位也不会假失败，而真出问题（点不出「全部」）仍会被抓住。
+    for _ in range(5):
+        if text_of("todo_filter") == "全部":
+            break
+        click_id("todo_filter")
+    check("切回「全部」", text_of("todo_filter") == "全部", repr(text_of("todo_filter")))
     check("条目回来了", text_of("td_t0") == "交作品集", repr(text_of("td_t0")))
     check("点「删除」", click_id("td_x0"))
     check("删除后回到空状态", text_of("todo_stat") == "这一天还没有待办",
