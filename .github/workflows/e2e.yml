@@ -7,11 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-ubuntu-latest:
-    name: Linux E2E (Ubuntu latest LTS)
-    # v5 鏀瑰姩锛歳uns-on 浠?ubuntu-26.04 鏀规垚 ubuntu-latest
-    # 鍘熷洜锛歷4 commit (16ad4818) 瑙﹀彂 0 绉掑け璐ワ紝鎬€鐤?ubuntu-26.04 runner
-    # 褰撴椂涓嶅彲鐢ㄣ€倁buntu-latest 浼氳嚜鍔ㄧ粰褰撳墠 stable LTS锛堥€氬父鏄?24.04锛夈€?    runs-on: ubuntu-latest
+  e2e:
+    name: Linux E2E
+    runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
@@ -24,8 +22,9 @@ jobs:
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Enable universe and install apt dependencies (v5)
-        run: |
+      - name: Install apt dependencies
+        # v6 fix: 涔嬪墠 v3-v5 閮芥槸鍥犱负 runs-on 鍩嬪湪娉ㄩ噴閲屽鑷?GitHub 鎶ョ己 run-on
+        # 鏈鍏?add universe 鍐嶈鍖?        run: |
           sudo apt-get update -qq
           sudo add-apt-repository -y universe
           sudo apt-get update -qq
@@ -38,7 +37,7 @@ jobs:
             libxcursor-dev libdrm-dev \
             libasound2-dev || sudo apt-get install -y -qq libasound-dev
 
-      - name: Prepare launcher workspace (sibling repos)
+      - name: Prepare launcher workspace
         run: |
           mkdir -p launcher
           cd launcher
@@ -56,22 +55,22 @@ jobs:
           cargo build --release -p octosense-card-host -p octosense-app-hub
           for bin in card-host hub; do
             if [ ! -x "target/release/$bin" ]; then
-              echo "FATAL: target/release/$bin missing or not executable"
+              echo "FATAL: target/release/$bin missing"
               exit 1
             fi
             sz=$(stat -c%s "target/release/$bin")
             echo "OK $bin: ${sz} bytes"
-            [ "$sz" -gt 100000 ] || { echo "FATAL: $bin too small ($sz bytes)"; exit 1; }
+            [ "$sz" -gt 100000 ] || { echo "FATAL: $bin too small"; exit 1; }
           done
 
-      - name: Run static gates (tools/run_all.sh --fast)
+      - name: Run static gates
         working-directory: OctoSense-Calendar-OMA
         env:
           OCTO_CARD_HOST: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/card-host
           OCTO_HUB: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/hub
         run: bash tools/run_all.sh --fast
 
-      - name: Run full E2E suite (tools/run_all.sh)
+      - name: Run full E2E suite
         working-directory: OctoSense-Calendar-OMA
         env:
           OCTO_CARD_HOST: ${{ github.workspace }}/launcher/OctoSense-App-Hub/target/release/card-host
@@ -86,7 +85,7 @@ jobs:
           path: OctoSense-Calendar-OMA/bundle/screenshots/
           if-no-files-found: ignore
 
-      - name: Upload full log on failure
+      - name: Upload log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
