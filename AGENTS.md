@@ -41,10 +41,15 @@ Add this app's own requirements, data sources and tests below.
 界面严格照 `ui-design-v1.html` 复刻（设计语言：档案卷宗 —— 暖白纸底 `#faf9f7`、
 暖黑墨色 `#191714`、单一赤陶强调色 `#b4531f`）。改动界面前先读那份设计稿，不要自行发挥。
 
-### 权限：只有 `storage`
+### 权限：`storage` + `net`（仅 Open-Meteo 天气）
 
-没有 `net`，**永远不要**引入任何网络调用、CDN 素材或遥测。
-素材一律打进 `bundle/`，因为宿主不会远程加载。
+`storage` 性质可写：事件库上限 16 MiB（宿主默认）。
+`net` 性质**仅限天气**：月历每个格子的左上角读 Open-Meteo 公开预报，含过去 30 天的历史，
+冷启动只拉一次并缓存到本机，离线回落到上次缓存；manifest 里
+`network.hosts` 必须列全三个域（`api.open-meteo.com` / `geocoding-api.open-meteo.com` /
+`archive-api.open-meteo.com`）。
+**禁止**任何其它网络调用、CDN 素材或遥测——评价、选图都会引向失败。素材一律打进
+`bundle/`，宿主不会远程加载。
 
 ### 数据来源与写入方式
 

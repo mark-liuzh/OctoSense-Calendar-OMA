@@ -14,11 +14,11 @@
   ],
   "screenshots": [
     "screenshots/01-list.png",
-    "screenshots/08-new-event.png",
     "screenshots/02-import.png",
+    "screenshots/03-conflict.png",
     "screenshots/04-conflict-detail.png",
-    "screenshots/09-todo.png",
-    "screenshots/11-goal.png",
+    "screenshots/05-after-advice.png",
+    "screenshots/06-export.png",
     "screenshots/12-egg.png"
   ],
   "icon": "assets/icon.svg",
