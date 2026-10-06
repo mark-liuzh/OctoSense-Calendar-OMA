@@ -96,19 +96,35 @@ card-host --bundle bundle --app-data /tmp/octo-data --allow-unsigned --stamp
 python3 <workspace>/OctoScript-App-Design-Flow/tools/octo check <此仓库>/bundle
 ```
 
-本仓库当前输出：
+发布基准 **`f4e599739d3e4c216b8d22a96a84fccd98e1b0cf`**（GitHub main HEAD + `v0.4.1` tag 指向同一 commit；2026-10-05 mark-liuzh 补签后 force-update）。
+这一份 bundle 在**本仓库 `bundle/`、GitHub 该 commit、团队空间节点 `KYOmtpaaCYkTey5orY661x`（v5）三处逐字节一致**（`diff -rq` 无输出），
+manifest 声明的 digest 是 `cfcf3b9e…` / signature `59d4b56a…`。
+
+mark-liuzh 端：[Release notes](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1)「📌 2026-10-05 补签」段声明
+`hub check --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380` → **PASSED**。
+
+本机（ody-cai Mac）跑同一条命令报 **REFUSED** —— 而且对**任何一份** v0.4.1 bundle 都如此，包括上面这份已发布的：
 
 ```
-com.oma.octosense.calendar 0.3.1 — PASSED
-  grants: capabilities {"storage"}, hosts {}, storage 16777216 bytes, agent none
+$ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+com.oma.octosense.calendar 0.4.1 — REFUSED
+  [refused] digest: the bundle hashes to 25283a805df8df798474ba62b0b35a5a0408bc476cbf48c7c82aa301ffa8207f,
+                  the manifest claims cfcf3b9e3236560c92b2c0d328433b7f6648df2bc9d16c2b52f8da9ecbb67bcf
+  grants: capabilities {"net", "storage"}, hosts {"api.open-meteo.com", "archive-api.open-meteo.com", "geocoding-api.open-meteo.com"}, storage 16777216 bytes, agent none
+hub: the bundle was refused
 ```
 
-`PASSED` 且**无任何警告**——本版已由发布者以队伍身份签名（`key_id: OMA`，Ed25519）。
-签名覆盖整个 manifest（含 `integrity.bundle_blake3`），任何人可用公钥独立复核：
+**根因**：本机这套 hub 工具**不是任何上游 commit 的干净检出** —— `_toolchain/OctoSense-App-Hub/`
+工作区有 **57 个文件未提交改动（+441 / −166）**，HEAD 停在上游 `58c3c8a`。
+本机 hub 的 `stamp` 与 `check` 彼此**自洽**（同一份字节都算 `25283a80…`，不是工具 bug），
+只是**与生成发布签名的那套构建口径不同**：同一份字节，本机算 `25283a80…`，mark-liuzh 端算 `cfcf3b9e…`。
+**这是发布工具口径问题，不是 bundle 内容问题。**
 
-```bash
-hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
-```
+> ⚠️ **不要在本机显式跑 `hub stamp` 去「修正」digest** —— 那会把 manifest 改成 `25283a80…`，
+> 让本仓库与已发布的 `f4e599739` 再次分叉。（`octo check` 对已签名 manifest 会拒绝重戳，不会自动改。）
+> 复核发布件请以 GitHub `f4e599739` / 团队空间 v5 为准。
+
+详细对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
 
 ## 30 秒看懂它
 
@@ -451,7 +467,8 @@ env | grep -i proxy
 
 报错信息分别是 `listing has more than 10 keywords` / `listing has more than 8 screenshots`。
 所以新增截图时**不能只往数组里塞** —— 要么替换掉信息量较低的那张，要么把多出来的
-留在仓库里当证据、但不进 `listing.json`。改完务必重跑 `octo check bundle` 确认是 `PASSED`。
+留在仓库里当证据、但不进 `listing.json`。改完重跑 `octo check bundle`，确认 `listing:` 那条 `REFUSED` 已消失
+（本机 hub 因工具口径差异还会对 digest 报 REFUSED，属已知现象，见上文「走一遍准入检查」）。
 
 （Windows 上还要给 `octo` 显式指 `.exe`：`OCTO_HUB=<…>/hub.exe OCTO_CARD_HOST=<…>/card-host.exe`，
 否则它会报 `hub not found`。）
@@ -522,7 +539,37 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.3.1`（v0.3.0 的提交前清理 patch；功能与用户可见行为零变化，详见 [`docs/RELEASE-NOTES-v0.3.1.md`](docs/RELEASE-NOTES-v0.3.1.md)） |
+| 版本 | `0.4.1`（v0.3.1 之后的**纯修复增量**：5 处可见缺陷修复 + 2 项收尾动作；详见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 准入检查 | `octo check` → `com.oma.octosense.calendar 0.3.1 — PASSED`（无警告；已用队伍密钥 `OMA` 签名） |
-| 提交 issue | [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 发布基准 | GitHub [`f4e599739d3e4c216b8d22a96a84fccd98e1b0cf`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/f4e599739d3e4c216b8d22a96a84fccd98e1b0cf)（main HEAD + `v0.4.1` tag 指向同一 commit；2026-10-05 补签）· digest `cfcf3b9e…` / signature `59d4b56a…` |
+| 准入检查 | **PASSED** —— mark-liuzh 端 `hub check bundle --publisher-key OMA=46b11cc1…`（[Release notes](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1)「📌 2026-10-05 补签」段）。本仓库 `bundle/`、GitHub 该 commit、团队空间节点 `KYOmtpaaCYkTey5orY661x`（v5）**三处逐字节一致**；本机 hub 因工具口径不同会报 REFUSED（对**任何一份**都如此），详见下方「✅」与 release notes |
+| 提交 issue | [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+
+> **✅ 发布件已对齐（2026-10-06）** —— v0.4.1 的发布基准 `f4e599739…` 现在在**三处逐字节一致**（`diff -rq` 无输出）：
+>
+> | 位置 | digest (blake3) | signature |
+> | --- | --- | --- |
+> | **本仓库 `bundle/`**（本次对齐后） | `cfcf3b9e…` | `59d4b56a…` |
+> | **GitHub `f4e599739…`**（main HEAD + `v0.4.1` tag，2026-10-05 补签） | `cfcf3b9e…` | `59d4b56a…` |
+> | **团队空间 `uP4AU6UftjDvNSJoEUWrVp` ›「版本更新」› 节点 `KYOmtpaaCYkTey5orY661x`（v5，2026-10-06 14:27 上传）** | `cfcf3b9e…` | `59d4b56a…` |
+>
+> 本仓库 `bundle/` 原先带的是**本机工具重算**的一套值（`71f671f5…` / `07ce03fd…`）—— 它既和发布件对不上，也和本机当前 hub 算出的 `25283a80…` 对不上，属于历史遗留的**第三套口径**。按「以 mark-liuzh 最新版为准」，已替换为发布件原值。
+>
+> **本机 `hub check` 仍报 REFUSED —— 但这对三份都成立，不构成对发布件的否定**：
+>
+> ```
+> $ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+> com.oma.octosense.calendar 0.4.1 — REFUSED
+>   [refused] digest: the bundle hashes to 25283a805df8df798474ba62b0b35a5a0408bc476cbf48c7c82aa301ffa8207f,
+>                   the manifest claims cfcf3b9e3236560c92b2c0d328433b7f6648df2bc9d16c2b52f8da9ecbb67bcf
+>   grants: capabilities {"net", "storage"}, hosts {"api.open-meteo.com", "archive-api.open-meteo.com", "geocoding-api.open-meteo.com"}, storage 16777216 bytes, agent none
+> hub: the bundle was refused
+> ```
+>
+> **根因：本机这套 hub 工具不是任何上游 commit 的干净检出。** `_toolchain/OctoSense-App-Hub/` 工作区有 **57 个文件未提交改动（+441 / −166）**，HEAD 停在上游 `58c3c8a`。本机 hub 的 `stamp` 与 `check` 彼此**自洽**（都算 `25283a80…`，不是工具 bug），只是**与生成发布签名的那套构建口径不同**：同一份字节，本机算 `25283a80…`，mark-liuzh 端算 `cfcf3b9e…`。
+>
+> **复核方式**：以 GitHub `f4e599739` / 团队空间 v5 那一份为准。**不要**在本机显式跑 `hub stamp` 去「修正」digest —— 那会让本仓库再次与发布件分叉（`octo check` 对已签名 manifest 会拒绝重戳，不会自动改）。
+>
+> 顺带记一笔：提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 是 2026-10-04 开的 reference，其描述里引用的 digest（`71f671f5…` / `07ce03fd…`）**与发布件对不上**，复核请以团队空间 v5 / GitHub `f4e599739` 为准。
+>
+> 完整对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。

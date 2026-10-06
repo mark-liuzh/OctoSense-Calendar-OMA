@@ -163,13 +163,10 @@ property prio not found in prototype chain. Did you mean: uid("t103") ...
 
 ## 五、⚠️ 已知限制
 
-1. **bundle 未签名**：`integrity.bundle_blake3` 已是当前 bundle 的真实哈希，
-   但 `signature` 字段为空 —— OMA 私钥只在 Ody 的机器上，需由 Ody 补签：
-   ```bash
-   hub stamp bundle
-   hub sign-manifest bundle --key ~/.octosense/oma-publisher.key --key-id OMA
-   hub check  bundle --publisher-key OMA=<publisher-key>
-   ```
+1. ~~**bundle 未签名**~~ → **已签名并三处对齐**（2026-10-05 由 Ody 补签、2026-10-06 对齐）：
+   `integrity.bundle_blake3` = `cfcf3b9e…`，`signature` = `key_id: OMA` / `59d4b56a…`，
+   与 GitHub `f4e599739…`、团队空间上传件**逐字节一致**。
+   > 本机（macOS）复核会因 hub 工具构建口径不同而报 REFUSED —— 详见「七、⚠️ 准入检查」。
 2. **农历 / 调休只覆盖 2025–2026**（公历固定节日已算到 2027–2029）
 3. **天气依赖 Open-Meteo 可用性**；离线时回落到上次缓存（≤8 小时视为新鲜），
    过期缓存里的「未来」预报会被丢弃，无可用数据则该格不显示图标
@@ -192,3 +189,37 @@ property prio not found in prototype chain. Did you mean: uid("t103") ...
 - **节气时刻**：按天文算法实算（2025–2030）
 - **源码许可**：Apache-2.0
 - **吉祥物**：Noto Animated Emoji `:octopus:`（CC BY 4.0，© Google LLC），署名见 `THIRD-PARTY.md`
+
+
+---
+
+## 七、⚠️ 准入检查（2026-10-06 对齐记录）
+
+v0.4.1 的发布基准是 GitHub **`f4e599739d3e4c216b8d22a96a84fccd98e1b0cf`**（main HEAD 与 `v0.4.1` tag 指向同一 commit）。
+该 bundle 现在在**三处逐字节一致**（`diff -rq` 无输出）：
+
+| 位置 | digest (blake3) | signature |
+|---|---|---|
+| 本仓库 `bundle/` | `cfcf3b9e…` | `59d4b56a…` |
+| GitHub `f4e599739…` | `cfcf3b9e…` | `59d4b56a…` |
+| 团队空间「版本更新」节点 `KYOmtpaaCYkTey5orY661x`（v5，2026-10-06 上传） | `cfcf3b9e…` | `59d4b56a…` |
+
+**本机（macOS）复核会报 REFUSED**，而且对上面**任何一份**都报：
+
+```
+$ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+com.oma.octosense.calendar 0.4.1 — REFUSED
+  [refused] digest: the bundle hashes to 25283a805df8df798474ba62b0b35a5a0408bc476cbf48c7c82aa301ffa8207f,
+                  the manifest claims cfcf3b9e3236560c92b2c0d328433b7f6648df2bc9d16c2b52f8da9ecbb67bcf
+hub: the bundle was refused
+```
+
+根因**不是 bundle 内容，而是本机 hub 工具的构建口径**：`_toolchain/OctoSense-App-Hub/` 工作区带未提交改动、
+HEAD 停在上游 `58c3c8a`，它对同一份字节算出 `25283a80…`，而生成 v0.4.1 签名的构建算出 `cfcf3b9e…`。
+（本机 `hub stamp` 与 `hub check` 彼此**自洽** ⇒ 不是工具内部 bug。）
+
+> ⚠️ **不要在本机显式跑 `hub stamp` 去「修正」digest**：那会把 manifest 改成 `25283a80…`，
+> 让本仓库与已发布的 `f4e599739` 再次分叉。复核请以 GitHub `f4e599739` / 团队空间 v5 为准。
+
+**遗留**：提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 的描述里引用的仍是
+2026-10-04 的旧 digest（`71f671f5…` / `07ce03fd…`），复核请以团队空间 v5 / GitHub `f4e599739` 为准。
