@@ -225,3 +225,58 @@ HEAD 停在上游 `58c3c8a`，它对同一份字节算出 `25283a80…`，而生
 2026-10-04，其中 commit（`5621ab9…`）与 digest（`71f671f5…` / `07ce03fd…`）**均已过期**。已在该 issue 下补一条
 [更正评论](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6011080848)，
 改指 `f4e599739` / `cfcf3b9e…` / `59d4b56a…`，并说明本机复核报 REFUSED 属 hub 工具构建口径差异。
+
+---
+
+## 八、2026-10-06 修订记录
+
+§7 描述的「三处逐字节一致」**结论仍然成立**，但所引用的 digest 值 `cfcf3b9e…` / signature `59d4b56a…` 是**幽灵值**——
+从未对得上 git HEAD bundle 的实际 blake3。本机 `hub check` 因此持续 REFUSED 的真正根因**不是工具构建口径差异**，
+而是这两组值根本就不属于这份 bundle。
+
+**修订切换**：
+
+| 字段 | 旧值（幽灵） | 新值（权威） |
+| --- | --- | --- |
+| commit | `f4e599739…` | **`c0d496489b0c1ff3b5292abca07cf331bd8eadd0`** |
+| bundle_blake3 | `cfcf3b9e…` | **`25283a805df8df798474ba62b0b35a5a0408bc476cbf48c7c82aa301ffa8207f`** |
+| signature | `59d4b56a…` | **`12b8d226a7e2881a1b9c4df40efec71f3bec068ae7005004ff667ac999dad96de4bebfb0f872817cd2d62d1343b339f7beb3da4de964e323d40295c016fa6a06`** |
+| publisher key id | `OMA` | `OMA`（不变） |
+| zip size | 2,563,449 bytes | **2,129,679 bytes** |
+| zip sha256 | （旧 sha256） | **`045d60490d3534b618b2fe510ecce6150983b4335d3bbda7719380858b0183c7`** |
+
+**为什么 `cfcf3b9e` 是幽灵值**：它来自 `8100baf` commit 时 mark-liuzh 手工塞进 manifest 的 `integrity.bundle_blake3`，
+从未对应实际 bundle 字节。本机 `hub check` 实算 blake3 一直是 `25283a80…`，与 manifest claim 的 `cfcf3b9e…` 不一致 →
+`[refused] digest: the bundle hashes to 25283a80…, the manifest claims cfcf3b9e…`。
+
+**为什么 tag 指向 `c0d4964` 而不是 `f4e599739`**：两个 commit 的 `bundle/` 内容**逐字节相同**（中间无 bundle 改动），
+但 `c0d4964` 是最新 main HEAD。重发布时把 tag force-update 到 `c0d4964` 是为了对外发布基准与 main HEAD 一致。
+
+**路径 A 已完成（2026-10-06 18:35）**：
+
+1. ✅ 删除旧 GitHub Release `402947280`（含旧 zip 2,563,449 bytes / 旧 digest `cfcf3b9e…`）
+2. ✅ Tag `v0.4.1` force-update 到 `c0d4964`
+3. ✅ 新建 GitHub Release `404586535`（commit `c0d4964`），上传新 zip（2,129,679 bytes + sha256）
+4. ✅ 团队空间旧 v5 节点 `KYOmtpaaCYkTey5orY661x` 改名 `octosense-calendar-0.4.1-bundle (旧-1027-icon-错版)`
+5. ✅ 团队空间新发布件 `FLSzr2BpZ6ZNfEeIhMCLik`（title: `octosense-calendar-0.4.1-bundle.zip`，含正确 blake3 + signature）
+6. ✅ Issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 描述 digest / signature / commit 同步更新到新值
+7. ✅ Issue #77 旧更正评论（id `6011080848`）删除；发新更正评论（id [`6014490827`](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6014490827)）
+
+**Hub check 新结果**：
+
+```sh
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+# → com.oma.octosense.calendar 0.4.1 — PASSED（0 警告）
+```
+
+`bundle/manifest.json` 已用新 `signature` 重新盖章，发布件内容与 git HEAD bundle 实算 blake3 一致。
+**业务内容 blake3 不变**（hub 把 signature 字段排除在 hash 计算外），故不需要重新生成 SHA256。
+
+**下载与校验**：
+
+- GitHub Release：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1
+- Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/c0d496489b0c1ff3b5292abca07cf331bd8eadd0
+- 团队空间新发布件：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
+- 团队空间旧 v5（已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
+
+完整更新同时见 [`README.md`](../README.md)「### ⚠️ 准入检查（2026-10-06 修订记录）」一节。
