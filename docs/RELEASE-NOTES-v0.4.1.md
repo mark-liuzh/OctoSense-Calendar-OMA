@@ -298,7 +298,7 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 | Publisher key id | `OMA` |
 | Release | `v0.4.1-r3`（id 404703213） |
 | Zip size | 2,129,680 bytes |
-| Zip sha256 | `7849c9bfd042c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` |
+| Zip sha256 | `7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` |
 
 ### 四处一致性（2026-10-06 逐处实测）
 
