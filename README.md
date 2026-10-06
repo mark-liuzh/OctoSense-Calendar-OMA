@@ -22,6 +22,7 @@
 - [冲突消解规则](#冲突消解规则)
 - [数据来源与限制](#数据来源与限制)
 - [权限与隐私](#权限与隐私)
+- [演示视频](#演示视频)
 - [演示脚本（2–3 分钟）](#演示脚本23-分钟)
 - [目录结构](#目录结构)
 - [排障](#排障)
@@ -378,6 +379,27 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 也就是：**应用在技术上无法把任何数据发出去**。无需「请相信我们」，权限清单就能证明。
 完整说明见 [PRIVACY.md](PRIVACY.md)。
 
+## 演示视频
+
+[![OctoSense 日历 · 演示视频封面](docs/media/octosense-demo-cover.jpg)](docs/media/octosense-demo-3min.mp4)
+
+两个版本，都是**真实宿主里录的屏**（`tools/record_demo.py` 驱动远程控制桥逐步操作），
+不是设计稿渲染、不是后期合成：每一段字幕对应的界面状态，都是那一步真跑出来的。
+
+| 版本 | 时长 | 用途 | 文件 |
+| --- | --- | --- | --- |
+| 完整版 | 3 分 27 秒 | 答辩 / 完整流程：导入 → 冲突 → 改期建议 → 回滚 → 无损导出 | [`octosense-demo-3min.mp4`](docs/media/octosense-demo-3min.mp4) · 6.9 MiB |
+| 精简版 | 1 分 39 秒 | 快速了解 / 商店页 | [`octosense-demo-1min30.mp4`](docs/media/octosense-demo-1min30.mp4) · 3.3 MiB |
+
+规格：824 × 1842（竖屏，跟随宿主窗口比例）· H.264 High + AAC · 24 fps · 带旁白音轨。
+
+> **素材署名**：背景音乐为 **Bensound「Sunny」**（Royalty Free Music from Bensound ·
+> <https://www.bensound.com>），按许可要求署名；中文旁白由 macOS `say -v Tingting` 现场合成。
+> 完整第三方清单见 [THIRD-PARTY.md](THIRD-PARTY.md)。
+
+> 点封面或文件名即可在 GitHub 里打开（附播放器 / 下载入口）。下一节是同一套流程的**逐段讲稿**，
+> 对着讲可以复现成片里的每一步。
+
 ## 演示脚本（2–3 分钟）
 
 对着这条讲，每步都对应一条可核对的输出：
@@ -436,7 +458,8 @@ tools/                  开发与实测工具（不属于应用运行时）
 seed.ics                基线测试数据（3 个事件，覆盖三种时间写法）
 conflict.ics            冲突测试数据（与 seed 重叠 30 分钟）
 edge.ics                边界测试数据（RRULE / EXDATE / RDATE / 转义 / 折行）
-docs/                   实测记录与调研笔记
+docs/                   实测记录与调研笔记 + 演示视频
+  media/                演示视频（完整版 3:27 / 精简版 1:39）与封面图
 ```
 
 应用本身**只依赖 `bundle/` 里的内容**：一份 `main.splash` 加静态素材，没有第三方运行时依赖。
