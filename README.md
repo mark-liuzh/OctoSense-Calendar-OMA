@@ -599,7 +599,7 @@ fill = color.mix(color_focus, focus)
 | Publisher key id | `OMA` |
 | Release | [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213） |
 | Zip size | 2,129,680 bytes |
-| Zip sha256 | `7849c9bfd042c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` |
+| Zip sha256 | `7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` |
 
 **路径 A 已完成（2026-10-06 20:48 第三次重发布）**：
 
@@ -618,7 +618,7 @@ fill = color.mix(color_focus, focus)
 - 团队空间 r3 发布件（权威）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
 - 团队空间旧 v6（`25283a80…`，已改名）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
 - 团队空间旧 v5（幽灵值，已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
-- SHA256 校验：`7849c9bfd042c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
+- SHA256 校验：`7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
 
 **Hub check 状态**：
 
