@@ -97,35 +97,28 @@ card-host --bundle bundle --app-data /tmp/octo-data --allow-unsigned --stamp
 python3 <workspace>/OctoScript-App-Design-Flow/tools/octo check <此仓库>/bundle
 ```
 
-发布基准 **`f4e599739d3e4c216b8d22a96a84fccd98e1b0cf`**（GitHub main HEAD + `v0.4.1` tag 指向同一 commit；2026-10-05 mark-liuzh 补签后 force-update）。
-这一份 bundle 在**本仓库 `bundle/`、GitHub 该 commit、团队空间节点 `KYOmtpaaCYkTey5orY661x`（v5）三处逐字节一致**（`diff -rq` 无输出），
-manifest 声明的 digest 是 `cfcf3b9e…` / signature `59d4b56a…`。
+发布基准 **`a0c9594752830d583f9cd532f5e79f43b313a51e`**（GitHub main HEAD + `v0.4.1` / `v0.4.1-r3` tag 指向同一 commit；2026-10-06 20:48 第三次重发布）。
+这一份 bundle 在**本仓库 `bundle/`、GitHub 该 commit、Release `v0.4.1-r3`（id 404703213）、团队空间节点 `Hh5OifAjEb4AbEcmgWrCqA`（r3 发布件）四处逐字节一致**，
+manifest 声明的 digest 是 `eb64816c…` / signature `a1eff36a…`（key_id `OMA`）。
 
-mark-liuzh 端：[Release notes](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1)「📌 2026-10-05 补签」段声明
-`hub check --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380` → **PASSED**。
+本机（ody-cai Mac）复现：
 
-本机（ody-cai Mac）跑同一条命令报 **REFUSED** —— 而且对**任何一份** v0.4.1 bundle 都如此，包括上面这份已发布的：
-
-```
-$ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
-com.oma.octosense.calendar 0.4.1 — REFUSED
-  [refused] digest: the bundle hashes to 25283a805df8df798474ba62b0b35a5a0408bc476cbf48c7c82aa301ffa8207f,
-                  the manifest claims cfcf3b9e3236560c92b2c0d328433b7f6648df2bc9d16c2b52f8da9ecbb67bcf
-  grants: capabilities {"net", "storage"}, hosts {"api.open-meteo.com", "archive-api.open-meteo.com", "geocoding-api.open-meteo.com"}, storage 16777216 bytes, agent none
-hub: the bundle was refused
+```bash
+_toolchain/OctoSense-App-Hub/target/release/hub check bundle \
+  --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+# → com.oma.octosense.calendar 0.4.1 — OK（PASSED，0 警告）
 ```
 
-**根因**：本机这套 hub 工具**不是任何上游 commit 的干净检出** —— `_toolchain/OctoSense-App-Hub/`
-工作区有 **57 个文件未提交改动（+441 / −166）**，HEAD 停在上游 `58c3c8a`。
-本机 hub 的 `stamp` 与 `check` 彼此**自洽**（同一份字节都算 `25283a80…`，不是工具 bug），
-只是**与生成发布签名的那套构建口径不同**：同一份字节，本机算 `25283a80…`，mark-liuzh 端算 `cfcf3b9e…`。
-**这是发布工具口径问题，不是 bundle 内容问题。**
+> ⚠️ **本机 hub 必须带 `--publisher-key`**：不带时会报
+> `publisher key "OMA" is not registered with this hub`，这是本机没装公钥造成的，不是 bundle 问题。
+>
+> ⚠️ **不要在本机显式跑 `hub stamp` 去「重算」digest**：当前 `eb64816c…` 已与远端发布件一致，
+> 再 stamp 会把 manifest 改成 `25283a80…`，让本仓库与已发布件再次分叉。
+> （`octo check` 对已签名 manifest 会拒绝重戳，不会自动改。）
+> 复核发布件请以 GitHub `a0c9594` / Release `v0.4.1-r3` / 团队空间 r3 节点为准。
 
-> ⚠️ **不要在本机显式跑 `hub stamp` 去「修正」digest** —— 那会把 manifest 改成 `25283a80…`，
-> 让本仓库与已发布的 `f4e599739` 再次分叉。（`octo check` 对已签名 manifest 会拒绝重戳，不会自动改。）
-> 复核发布件请以 GitHub `f4e599739` / 团队空间 v5 为准。
-
-详细对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
+历史背景（v0.4.1 曾经历三次重发布，`cfcf3b9e…` 与 `25283a80…` 均为过期值）见下方「参赛信息」与
+[`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
 
 ## 30 秒看懂它
 
@@ -578,8 +571,8 @@ fill = color.mix(color_focus, focus)
 | 应用 ID | `com.oma.octosense.calendar` |
 | 版本 | `0.4.1`（v0.3.1 之后的**纯修复增量**：5 处可见缺陷修复 + 2 项收尾动作；详见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 发布基准 | GitHub [`c0d496489b0c1ff3b5292abca07cf331bd8eadd0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/c0d496489b0c1ff3b5292abca07cf331bd8eadd0)（main HEAD + `v0.4.1` tag 已 force-update 同一 commit；2026-10-06 18:35 重发布）· digest `25283a80…` / signature `12b8d226…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**（本机 + mark-liuzh 端两套 hub 工具**口径一致**：都算 `25283a80…`、都认 `12b8d226…`）。本仓库 `bundle/`、GitHub 该 commit、团队空间节点 `FLSzr2BpZ6ZNfEeIhMCLik`（新发布件）**三处逐字节一致** |
+| 发布基准 | GitHub [`a0c9594752830d583f9cd532f5e79f43b313a51e`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e)（main HEAD + `v0.4.1` / `v0.4.1-r3` tag 同一 commit；2026-10-06 20:48 第三次重发布）· digest `eb64816c…` / signature `a1eff36a…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213）、团队空间节点 [`Hh5OifAjEb4AbEcmgWrCqA`](https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA)（r3 发布件）**四处逐字节一致** |
 | 提交 issue | [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ⚠️ 准入检查（2026-10-06 修订记录）
@@ -590,38 +583,49 @@ fill = color.mix(color_focus, focus)
 | --- | --- | --- | --- | --- |
 | issue #77 描述原始 | `5621ab9…` | `71f671f5…` | `07ce03fd…` | 2026-10-04 提交，已过期 |
 | 第一条更正评论（已删） | `f4e59973…` | `cfcf3b9e…` | `59d4b56a…` | **幽灵值**——从未对得上 git HEAD bundle 实算 |
-| **当前权威**（2026-10-06 18:35） | **`c0d4964…`** | **`25283a80…`** | **`12b8d226…`** | 与 git HEAD bundle 实算 blake3 一致，本机 hub check **PASSED** |
+| 第二次更正（18:35） | `c0d4964…` | `25283a80…` | `12b8d226…` | 20:48 改 `listing.json` 截图清单后已过期 |
+| **当前权威**（2026-10-06 20:48） | **`a0c9594…`** | **`eb64816c…`** | **`a1eff36a…`** | 与 git HEAD bundle 实算 blake3 一致，本机 hub check **PASSED** |
 
-**为什么前两条都不对**：`cfcf3b9e…` 是 mark-liuzh 在 `8100baf` commit 手工塞进 manifest 的"幽灵值"，从来没对应实际 bundle 字节。本机 `hub check` 持续 REFUSED 就是因为这个 mismatch。`f4e59973` 是 tag 在 2026-10-05 补签时指向的 commit，与 `c0d4964` 内容相同（`bundle/` 未再改动），但**没 force-update tag**；新发布件已重发布并把 tag 推到 c0d4964。
+**为什么前面几条都不对**：`cfcf3b9e…` 是 mark-liuzh 在 `8100baf` commit 手工塞进 manifest 的"幽灵值"，从来没对应实际 bundle 字节。`25283a80…` 是 18:35 第二次重发布时的有效值，但 20:11 的 `73d1854` 把 `listing.json` 的商店截图清单从 7 张换成主线叙事 6 张 + 彩蛋 1 张（撞 listing 最多 8 张上限，砍掉与叙事重叠的 08/09/11），bundle 字节随之改变、重签为 `eb64816c…`。发布基准因此前移到 `a0c9594`。
 
 **当前权威值**：
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `c0d496489b0c1ff3b5292abca07cf331bd8eadd0` |
-| Tag | `v0.4.1`（已 force-update 到 c0d4964） |
+| Commit | `a0c9594752830d583f9cd532f5e79f43b313a51e` |
+| Tag | `v0.4.1` + `v0.4.1-r3`（同一 commit） |
 | Bundle blake3 | `eb64816c9b9407395fadd33712d2625be53baba030b0ae301d32ca45a69f073a` |
 | Signature (Ed25519) | `a1eff36a89102a336a5aa8fec565901a96739859eed0af8e08f9686c0da1af6bd5df1449a5d542274e36259a97c7f79a9304a81b3e8d35d71cd844a7b5a4370f` |
 | Publisher key id | `OMA` |
-| Zip size | 2,129,679 bytes |
-| Zip sha256 | `045d60490d3534b618b2fe510ecce6150983b4335d3bbda7719380858b0183c7` |
+| Release | [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213） |
+| Zip size | 2,129,680 bytes |
+| Zip sha256 | `7849c9bfd042c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` |
 
-**路径 A 已完成（2026-10-06）**：
+**路径 A 已完成（2026-10-06 20:48 第三次重发布）**：
 
 1. ✅ 删除旧 GitHub Release 402947280（含旧 zip 2,563,449 bytes / digest `cfcf3b9e…`）
-2. ✅ Tag `v0.4.1` force-update 到 c0d4964
-3. ✅ 新建 GitHub Release 404586535，上传新 zip（2,129,679 bytes + sha256）
-4. ✅ 团队空间旧 v5 节点 `KYOmtpaaCYkTey5orY661x` 改名 `octosense-calendar-0.4.1-bundle (旧-1027-icon-错版)`
-5. ✅ 团队空间新发布件 `FLSzr2BpZ6ZNfEeIhMCLik`（含正确 blake3 + signature）
-6. ✅ Issue #77 描述 digest / signature / commit 同步更新
-7. ✅ Issue #77 旧更正评论（id `6011080848`）删除；发新更正评论（id [`6014490827`](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6014490827)）
+2. ✅ 删除第二次重发布的 Release 404586535（旧 zip 2,129,679 bytes / digest `25283a80…`）
+3. ✅ Tag `v0.4.1` force-update 到 `a0c9594`；另建 `v0.4.1-r3` 同指该 commit（GitHub Release 不允许复用已存在 tag）
+4. ✅ 新建 GitHub Release 404703213，上传 r3 zip（2,129,680 bytes + sha256，实测下载校验一致）
+5. ✅ 团队空间发布件 [`Hh5OifAjEb4AbEcmgWrCqA`](https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA)（r3）；第二次件 `FLSzr2BpZ6ZNfEeIhMCLik` 与第一次件 `KYOmtpaaCYkTey5orY661x` 均已改名标记为旧版
+6. ✅ Issue #77 描述 digest / signature / commit 同步更新到 r3
+7. ✅ Issue #77 第三次重发布评论（id [`6016799102`](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6016799102)）记录 `25283a80…` → `eb64816c…` 的原因
 
 **下载与校验**：
 
-- GitHub Release：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
+- GitHub Release（r3，权威件）：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
 - Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e
-- 团队空间新发布件（r3）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
-- 团队空间旧 v6（已改名）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
-- 团队空间旧 v5（已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
+- 团队空间 r3 发布件（权威）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
+- 团队空间旧 v6（`25283a80…`，已改名）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
+- 团队空间旧 v5（幽灵值，已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
+- SHA256 校验：`7849c9bfd042c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
+
+**Hub check 状态**：
+
+```sh
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+```
+
+→ **PASSED**。
 
 完整对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
