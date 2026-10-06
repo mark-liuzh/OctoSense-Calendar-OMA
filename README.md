@@ -397,8 +397,8 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 > <https://www.bensound.com>），按许可要求署名；中文旁白由 macOS `say -v Tingting` 现场合成。
 > 完整第三方清单见 [THIRD-PARTY.md](THIRD-PARTY.md)。
 
-> 点封面或文件名即可在 GitHub 里打开（附播放器 / 下载入口）。下一节是同一套流程的**逐段讲稿**，
-> 对着讲可以复现成片里的每一步。
+> 点封面或文件名即可在 GitHub 上打开该文件（文件页右上角是 **Download raw file**；
+> `git clone` 后用任意播放器打开）。下一节是同一套流程的**逐段讲稿**，对着讲可以复现成片里的每一步。
 
 ## 演示脚本（2–3 分钟）
 
