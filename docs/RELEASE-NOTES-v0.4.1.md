@@ -221,5 +221,7 @@ HEAD 停在上游 `58c3c8a`，它对同一份字节算出 `25283a80…`，而生
 > ⚠️ **不要在本机显式跑 `hub stamp` 去「修正」digest**：那会把 manifest 改成 `25283a80…`，
 > 让本仓库与已发布的 `f4e599739` 再次分叉。复核请以 GitHub `f4e599739` / 团队空间 v5 为准。
 
-**遗留**：提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 的描述里引用的仍是
-2026-10-04 的旧 digest（`71f671f5…` / `07ce03fd…`），复核请以团队空间 v5 / GitHub `f4e599739` 为准。
+**已处理（2026-10-06）**：提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 的描述写于
+2026-10-04，其中 commit（`5621ab9…`）与 digest（`71f671f5…` / `07ce03fd…`）**均已过期**。已在该 issue 下补一条
+[更正评论](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6011080848)，
+改指 `f4e599739` / `cfcf3b9e…` / `59d4b56a…`，并说明本机复核报 REFUSED 属 hub 工具构建口径差异。

@@ -570,6 +570,6 @@ fill = color.mix(color_focus, focus)
 >
 > **复核方式**：以 GitHub `f4e599739` / 团队空间 v5 那一份为准。**不要**在本机显式跑 `hub stamp` 去「修正」digest —— 那会让本仓库再次与发布件分叉（`octo check` 对已签名 manifest 会拒绝重戳，不会自动改）。
 >
-> 顺带记一笔：提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 是 2026-10-04 开的 reference，其描述里引用的 digest（`71f671f5…` / `07ce03fd…`）**与发布件对不上**，复核请以团队空间 v5 / GitHub `f4e599739` 为准。
+> 提交 issue [#77](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) 的描述写于 2026-10-04，其中 commit（`5621ab9…`）与 digest（`71f671f5…` / `07ce03fd…`）**均已过期**；2026-10-06 已在该 issue 下补[更正评论](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6011080848)，改指 `f4e599739` / `cfcf3b9e…` / `59d4b56a…`。
 >
 > 完整对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
