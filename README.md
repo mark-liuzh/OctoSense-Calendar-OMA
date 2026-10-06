@@ -66,6 +66,20 @@ cargo build --release -p octosense-card-host -p octosense-app-hub
 
 ### 1. 跑起来
 
+> ⚠️ **先跑完下面「2. 走一遍准入检查」再执行本节**——准入检查验证的是 clone 里的**原始字节**，
+> 本节的步骤会修改工作区里的 `bundle/manifest.json`（剥掉签名字段），跑完用
+> `git checkout -- bundle/manifest.json` 恢复。
+
+本仓库的 `bundle/` 是**已签名发布件**（OMA 密钥签名）。而 `card-host` 不验证任何 publisher 公钥，
+对带签名的 manifest 会直接拒绝（`refused: no signature verifier is installed`）——`--allow-unsigned`
+只对**无**签名的 manifest 生效，官方 harness 的 `octo run` 内部同样以 `--allow-unsigned` 调
+card-host（两种方式都已实测确认）。本地查看 UI 需要先剥掉 signature 字段：
+
+```bash
+cd <此仓库>
+python3 -c "import json;p='bundle/manifest.json';m=json.load(open(p));del m['integrity']['signature'];json.dump(m,open(p,'w'),indent=2,ensure_ascii=False)"
+```
+
 **方式 A：用官方 `tools/octo`（推荐）**
 
 ```bash
@@ -84,20 +98,12 @@ export OCTO_HUB=<workspace>/.cargo-target/octosense/release/hub
 
 **方式 B：直接启动宿主（Windows 上实测用的就是这条）**
 
-> ⚠️ **先跑完上面「2. 走一遍准入检查」再执行本节**——hub check 验证的是 clone 里的**原始字节**，
-> 下面的步骤会修改工作区里的 `bundle/manifest.json`（剥掉签名字段）。
-
-本仓库的 `bundle/` 是**已签名发布件**（OMA 密钥）。`card-host` 不验证任何 publisher 公钥，
-对带签名的 manifest 会直接拒绝（`refused: no signature verifier is installed`），
-`--allow-unsigned` 只对**无**签名的 manifest 生效。本地查看 UI 需要先剥掉 signature 字段：
-
 ```bash
 cd <此仓库>
-python3 -c "import json;p='bundle/manifest.json';m=json.load(open(p));del m['integrity']['signature'];json.dump(m,open(p,'w'),indent=2,ensure_ascii=False)"
 card-host --bundle bundle --app-data /tmp/octo-data --allow-unsigned --stamp
 ```
 
-应用会直接显示出来。恢复原始 manifest：`git checkout -- bundle/manifest.json`。
+应用会直接显示出来。
 
 ### 2. 走一遍准入检查
 
