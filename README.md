@@ -618,9 +618,10 @@ fill = color.mix(color_focus, focus)
 
 **下载与校验**：
 
-- GitHub Release：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1
-- Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/c0d496489b0c1ff3b5292abca07cf331bd8eadd0
-- 团队空间新发布件：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
+- GitHub Release：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
+- Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e
+- 团队空间新发布件（r3）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
+- 团队空间旧 v6（已改名）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
 - 团队空间旧 v5（已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
 
 完整对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
