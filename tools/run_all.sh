@@ -44,7 +44,7 @@ echo "######## 阶段 1/2 · 静态自检 ########"
 static_gate
 for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls; do
   printf '  %-10s ' "$t"
-  if out=$("$PY" "$ROOT/tools/$t.py" "$ROOT/bundle/main.splash" 2>&1); then
+  if out=$("$PY" "$ROOT/tools/$t.py" "$ROOT/${BUNDLE:-bundle}/main.splash" 2>&1); then
     echo "PASS"
   else
     echo "FAIL"

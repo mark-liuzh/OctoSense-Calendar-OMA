@@ -4,7 +4,7 @@
 //       解析 → 预览 → 合并进本地事件库；也能把本地事件导出成 .ics 带走。
 //
 // 设计要点（详见 docs/ics-import-export-design.md）：
-//   - 只申请 storage 一个能力，全程离线，不联网
+//   - 申请 storage + net；net 仅用于 Open-Meteo 天气（只读 GET），日历数据不出本机
 //   - 解析分块续跑：单 handler 200000 指令 / 64ms 是双限，大文件不能一口气解析
 //   - UID + SEQUENCE 去重：重复导入幂等；SEQUENCE 变大视为改期
 //
@@ -130,8 +130,9 @@ let c_mood4    = #xd08a2e   // 疲惫
 let c_mood5    = #xa8453a   // 低落
 
 // ── 中国法定节假日 / 调休数据（内置） ────────────────────────────────
-// 为什么内置而不是联网拉取：本应用只申请了 `storage` 能力、`hosts` 为空，
-//   运行时没有任何网络出口，假日数据只能随 bundle 一起离线携带。
+// 为什么内置而不是联网拉取：日历数据必须离线可用，而唯一的网络权限
+//   （Open-Meteo 天气只读 GET）既不含节假日数据、也不该被用来拉它，
+//   所以假日数据随 bundle 一起离线携带。
 // 数据来源（均为国务院办公厅通知，多源交叉核对一致）：
 //   2025：《关于 2025 年部分节假日安排的通知》（2024-11-12）
 //   2026：《关于 2026 年部分节假日安排的通知》
@@ -5186,8 +5187,9 @@ fn cap_slot_del_label(k) {
 
 
 // ── 共享范围（离线版）────────────────────────────────────────────
-// ⚠️ 说清楚边界：真正的**实时共享**需要一个后端（本应用只申请 storage、
-//    没有任何网络出口），所以这里做的是「共享范围控制」——
+// ⚠️ 说清楚边界：真正的**实时共享**需要一个后端。本应用没有账号系统、
+    //    也没有可写的服务端（本应用唯一申请的网络权限是 Open-Meteo 天气**只读 GET**，
+            //    没有任何写入通道），所以实时互通做不到。这里做的是「共享范围控制」——
 //    把哪些事件标为愿意对外分享，导出时只导出这些（隐私留在本机）。
 //    这是离线能做到的最大诚实版本；实时互通列入后续计划。
 fn is_shared(uid) {
@@ -5274,7 +5276,13 @@ fn mascot_line() {
     if k == 2 { return "生日这种，把「重复」设成「每年」" }
     if k == 3 { return "「待办」分区里，勾掉一件算一件" }
     if k == 4 { return "「心情」分区，记一句这天怎么样" }
-    if k == 5 { return "数据全在本机 —— 不联网、不上传" }
+    // ⚠️ 2026-10-08 修：原文「数据全在本机—— 不联网、不上传」与 manifest 矛盾
+    //   （已申请 net，仅用于 Open-Meteo 天气）。这句话是**界面上用户能直接看到的**，
+    //   与 README/PRIVACY 一起构成对外声明，必须与实际权限一致。
+    //   ⚠️⚠️ 但字数必须守住：原来那句 16 字，改长一个换行就会把竖向预算挤爆
+    //   （实测下方工具条的「导入」按钮被压到 height=16，从可点变成点不动）。
+    //   与上面「已写入 N 个事件」那条同一个坑：多 6 字就换行 → 后面全被裁。
+    if k == 5 { return "日历数据不出本机 · 仅天气联网" }
     // ★ 第 7 句：原先是独立的图例行（view_bar 里的 vnow，整整占掉 30px 一行）。
     //   竖向预算不够，那一行被并掉了 —— 图例改由吉祥物顺带讲。这正是吉祥物
     //   存在的意义：把旁边那些「说明行」省下来。
@@ -7624,9 +7632,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         //    全被挤到窗口外。用 Fit 让内容自己撑开。
         RoundedView{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 14 spacing: 10
             draw_bg +: {color: c_card border_radius: 10.0 border_size: 1.0 border_color: c_line}
-            RoundedView{width: Fill height: 76.0 flow: Right spacing: 12 draw_bg +: {color: c_card}
+            // ⚠️⚠️ 这里原来写死 height: 76.0 / 72.0（2026-10-08 修）——
+            //    里面三行 Label（标题 15px + 队伍 12px + 版本 11px）实际需要约 92px，
+            //    写死高度把最后一行「版本 0.2.0 · Apache-2.0」整个裁掉了（/snap 读不到，
+            //    界面上也看不见）。正是 AGENTS.md 记的那条：容器一律 height: Fit。
+            // ⚠️⚠️ 但光把 76.0 改成 Fit **不够**（实测右列仍是 r=[118,284,260,72]）：
+            //    外层是 `flow: Right`，高度被 Image 的 72px 定死，而 Fit 子节点
+            //    在横向流里按父高度算、自己不撑开 ⇒ 第三行照样被裁。
+            //    ⇒ Image 一侧必须给足高度（92），右列才能跟着长。
+            RoundedView{width: Fill height: 92.0 flow: Right spacing: 12 draw_bg +: {color: c_card}
                 Image{width: 72.0 height: 72.0 src: http_resource("{{assets}}/octo-mascot-96.webp") fit: ImageFit.CropToFill}
-                RoundedView{width: Fill height: 72.0 flow: Down spacing: 3 draw_bg +: {color: c_card}
+                RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
                     Label{width: Fill text: "版本 0.2.0 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
@@ -7637,7 +7653,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "© Google LLC · Noto Animated Emoji · CC BY 4.0"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
-            Label{width: Fill text: "本应用只申请 storage 能力，数据全部留在本机，不联网。"
+            Label{width: Fill text: "本应用申请 storage + net：日历数据全部留在本机；net 仅用于读取 Open-Meteo 天气（只读，不发送任何事件数据）。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             // ── 共享范围（2026-10-01 新增）──────────────────────────────
             // ⚠️ 必须把边界写在**界面上**，不能只写 README：真正的实时共享要有后端，
@@ -7649,7 +7665,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text.text_style: theme.font_bold{font_size: 12}}
             share_line := Label{width: Fill text: "" draw_text.color: c_ink2
                 draw_text.text_style: theme.font_regular{font_size: 11}}
-            Label{width: Fill text: "没有网络出口，所以做不了实时互通；这里只标记「哪些事件愿意分享」，导出共享包时只带这些。"
+            Label{width: Fill text: "没有可写的服务端，所以做不了实时互通；这里只标记「哪些事件愿意分享」，导出共享包时只带这些。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
             RoundedView{width: Fill height: 30.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
                 ButtonFlat{text: "全部共享" height: 28.0 padding: Inset{left: 12 right: 12}

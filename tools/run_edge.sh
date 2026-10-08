@@ -21,6 +21,22 @@ static_gate
 
 shot() { $CURL --max-time 20 "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM" -o "$EV/$1" 2>/dev/null; }
 show() { "$PY" tools/e2e.py texts 2>&1 | grep -E "$1"; }
+# ★ 2026-10-08（P0-1）：新增。`show` 只是把匹配行打出来，**从不参与判定**——
+#   历史上 run_edge.sh 全文没有 exit，于是所有判定都是摆设。现在凡是
+#   「本该出现却没出现」的东西都必须走 expect_* 记进 BAD，最后统一 exit 1。
+BAD=0
+bad() { BAD=$((BAD+1)); }
+# 在视口内文本里找子串（用于「重复 / 全天」这类**标签必须可见**的断言）
+expect_viewport() {  # $1 = 期望子串, $2 = 说明
+  local got
+  got=$("$PY" tools/e2e.py texts 2>&1)
+  if printf '%s' "$got" | grep -qF "$1"; then
+    echo "  OK   $2"
+  else
+    echo "  FAIL $2 —— 视口内未出现「$1」"
+    bad
+  fi
+}
 # 滚回页顶 / 滚到底。⚠️ 列表是 ScrollYView，滚下去之后顶部的
 # 「导入」按钮会离开视口、从渲染树里消失，need() 就找不到了。
 to_top() { for _ in 1 2 3 4 5 6; do "$PY" tools/e2e.py scroll -400 >/dev/null 2>&1; done; }
@@ -52,6 +68,10 @@ shot "01-edge-list.png"
 #    第一次跑这里没滚，10-06/12-25 的行都还没渲染，被误判成「标签没出来」。
 to_bottom
 show "重复|全天|VALUE=DATE|月 [0-9]+ 日"
+# ★ P0-1：原来只有上面那行 show（纯打印，不判定）。重复日程必须打标签、
+#   不能静默合并 —— 这是 edge.ics 存在的唯一理由，所以要真断言。
+expect_viewport "重复" "重复日程应打「重复」标签（不能静默合并）"
+expect_viewport "全天" "全天事件应打「全天」标签（VALUE=DATE 不参与自动改期）"
 shot "02-edge-list-scrolled.png"
 
 echo
@@ -80,6 +100,9 @@ for key in "BEGIN:VCALENDAR" "RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=8" "RRULE:FREQ=YE
   fi
 done
 echo "  字段丢失数: $MISS"
+# ★ P0-1：字段丢失必须让脚本失败。这 14 条硬断言是本流程存在的唯一理由，
+#   历史上只打印不判定 —— 导出真丢字段时全量回归照样全绿。
+[ "$MISS" = "0" ] || bad
 
 echo
 echo "=== [7/8] 往返：把导出的 ICS 原样再解析一次 ==="
@@ -95,17 +118,35 @@ RT=$("$PY" tools/e2e.py write 2>&1 | grep -oE "新增 [0-9]+ / 改期 [0-9]+ / �
 echo "  往返结果: $RT"
 case "$RT" in
   *"新增 0 / 改期 0 / 跳过 6"*) echo "  OK   往返幂等：导出无损、重入不产生副本" ;;
-  *) echo "  FAIL 往返不幂等（期望 新增 0 / 改期 0 / 跳过 6）" ;;
+  *) echo "  FAIL 往返不幂等（期望 新增 0 / 改期 0 / 跳过 6）"; bad ;;
 esac
 shot "03-roundtrip.png"
-show "已写入"
+expect_viewport "已写入" "往返后状态条应确认写入完成"
 
 echo
 echo "=== [8/8] 错误检查 ==="
-NERR=$(grep -c '\[E\]' "$OUT/run-edge.log" 2>/dev/null); NERR=${NERR:-0}
+NERR=$(host_error_count "$OUT/run-edge.log")
 echo "编译/运行错误数: $NERR"
 grep '\[E\]' "$OUT/run-edge.log" 2>/dev/null | head -5 || true
+# ★ P0-1：宿主错误数也必须参与判定（与 run_conflict.sh / run_e2e.sh 一致）。
+[ "$NERR" = "0" ] || bad
+# 资源加载失败硬断言（同 run_conflict.sh）：不要匹配裸 `404`，
+# 宿主日志里的 `splash.rs:404:9` 是源码行号，会命中假阳性。
+if grep -qiE "load failed|failed to load|failed to fetch|no such file" "$OUT/run-edge.log"; then
+  echo "FAIL: 宿主日志里出现资源加载失败："
+  grep -inE "load failed|failed to load|failed to fetch|no such file" "$OUT/run-edge.log" | head -5
+  bad
+fi
 echo "证据文件:"; ls "$EV"
 
+echo
+echo "=== 断言汇总 ==="
+echo "失败项数: $BAD"
+
 kill_host
-echo "DONE"
+if [ "$BAD" != "0" ]; then
+  echo "EDGE FAIL"
+  exit 1
+fi
+echo "EDGE PASS"
+exit 0

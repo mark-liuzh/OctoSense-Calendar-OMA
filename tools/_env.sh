@@ -60,6 +60,16 @@ fi
 export PYTHONIOENCODING="utf-8"
 export PYTHONUTF8="1"
 
+# ── bundle 路径（可覆盖）───────────────────────────────────────────────
+# 默认就是提交件bundle/。若本机card-host 跑不起来（它内置 RefuseAllSignatures，
+# 对**任何**带签名的 manifest 一律拒绝，而 OMA 公钥只在提交 App Hub 那侧安装），
+# 可用 OCTO_BUNDLE 指向一份剥掉 integrity.signature 的**副本**：
+#   python3 -c "import sys;sys.path.insert(0,'tools');import record_demo as R;R.make_dev_bundle()"
+#   OCTO_BUNDLE=.runtime/bundle-dev bash tools/run_all.sh
+# ⚠️ 绝不要因此改 bundle/manifest.json 的integrity，也不要用本机 `hub stamp`
+#    修 digest —— 那会让仓库与发布件分叉（见 docs/RELEASE-NOTES-v0.4.1.md §7）。
+BUNDLE="${OCTO_BUNDLE:-bundle}"
+
 # ── 端口 ──────────────────────────────────────────────────────────────
 PORT="${PORT:-8932}"
 export OCTO_PORT="$PORT"   # tools/e2e.py 读这个
@@ -89,7 +99,7 @@ CURL="curl -s --noproxy 127.0.0.1 --max-time 20"
 #               （on_render 报错 → 月历空白 → refresh_all 中断 → assert_clean
 #                误报「存储不干净」）。
 static_gate() {
-  local f="$ROOT/bundle/main.splash" rc=0 out t
+  local f="$ROOT/$BUNDLE/main.splash" rc=0 out t
   for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls; do
     if ! out=$("$PY" "$ROOT/tools/$t.py" "$f" 2>&1); then
       echo "FATAL: 静态门禁 tools/$t.py 未通过：" >&2
@@ -133,9 +143,28 @@ assert_clean() {
 #    以及任何 `[ "$n" = "0" ]` 比较都会**假失败**（2026-09-30 踩到）。
 host_error_count() {
   local n
+  # ⚠️ 不要写 `$(grep -c ... || echo 0)`：grep -c 无匹配时**自己会输出 0**
+  #    且退出码为 1，于是 `|| echo 0` 再补一个 0 → 结果是两行 "0\n0"。
+  #    后果有两个：屏幕上多出一个来路不明的 0（看着像别的什么东西坏了），
+  #    以及任何 `[ "$n" = "0" ]` 比较都会**假失败**（2026-09-30 踩到）。
   n=$(grep -c '\[E\]' "$1" 2>/dev/null || true)
-  printf '%s' "${n:-0}"
+  n=${n:-0}
+  # ★ 2026-10-08（P0-4）：过滤**良性降级**白名单。
+  #    Linux 上没有 PulseAudio 服务端时，makepad 会打 error 级日志再回退 ALSA
+  #    继续运行（platform/src/os/linux/pulse_audio.rs:740-753：PA_CONTEXT_NOAUSPAWN
+  #    下连不上 → 打日志 → 销毁 context → return None）。降级成功，不是崩溃，
+  #    但它会让「编译/运行错误数 = 0」这条硬指标在 Linux 上永远为 1。
+  #    本应用 bundle/main.splash 音频 API 引用实测 0 处（display_list 会误命中，
+  #    排除后为 0），根本走不到这条路径 —— 纯属宿主环境噪声。
+  if [ "$n" != "0" ] && [ -n "${HOST_ERROR_WHITELIST:-}" ]; then
+    n=$(grep '\[E\]' "$1" 2>/dev/null | grep -vE "$HOST_ERROR_WHITELIST" | grep -c '' || true)
+    n=${n:-0}
+  fi
+  printf '%s' "$n"
 }
+
+# 白名单：Linux 无声卡环境下宿主自报的良性降级（不算应用错误）
+HOST_ERROR_WHITELIST='pulse_audio\.rs:.*pa_context_connect failed|pulseaudio.*connection refused|ALSA fallback'
 
 # ── 宿主进程探测 ──────────────────────────────────────────────────────
 # 实测：本机 `tasklist` 可用，输出里进程名就是 `card-host.exe`（不带路径）。
@@ -246,8 +275,18 @@ boot_host() {
     exit 1
   fi
 
-  MAKEPAD_REMOTE="$PORT" "$HOST" --bundle bundle --app-data "$APP_DATA" \
-    --allow-unsigned --stamp > "$log" 2>&1 &
+  # ⚠️⚠️ 显式传 --size（2026-10-08）：不传时 card-host 默认 412x892，但实测
+  #   `main_window r=[0,0,412,849]` —— 少了 43px。后果不是「窗口小一点」那么温和：
+  #   竖向预算被挤爆后 tools 容器从 56px（12+32+12）塌成 31px，
+  #   三个按钮的 height 从 32 被压到 **14~16px**，点「导入」不响应
+  #   （`open` 报「entry 不在树里」），状态条「已加载 0 个事件」也换行被裁
+  #   ⇒ assert_clean 直接 FATAL，整条流程根本开不了局。
+  #   ⚠️ 这与显示器分辨率无关、也与本轮改动无关（git stash 回 HEAD 原版同样复现），
+  #   是宿主在本机的窗口高度协商行为。显式给一个更宽松的高度即可绕开：
+  #   实测 --size 412x1000 时按钮恢复 32px、「已加载 0 个事件」正常出现。
+  #   892 是 bundle 的设计视口，给更高只是让它有余量，不会改变布局。
+  MAKEPAD_REMOTE="$PORT" "$HOST" --bundle "$BUNDLE" --app-data "$APP_DATA" \
+    --size "${WINDOW_SIZE:-412x1000}" --allow-unsigned --stamp > "$log" 2>&1 &
   local ready=0
   for _ in $(seq 1 20); do
     if $CURL --max-time 3 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then ready=1; break; fi

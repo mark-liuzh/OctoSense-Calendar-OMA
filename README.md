@@ -365,12 +365,20 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
     （按 RFC 5545，无效日期直接跳过，不是顺延到 3 月 1 日）；`FREQ=MONTHLY` 起始于 31 日时，
     只有 31 天的月份才有标记。界面不会为这两种情况额外提醒。
 - **用户数据留在本机**；`manifest.json` 申请 `storage`（本机存储）+ `net`（仅 Open-Meteo 天气一项只读 GET，不传任何用户数据）（详见 [PRIVACY.md](PRIVACY.md)）。
-- **平台验证范围：Windows 与 macOS 均已实机验证。** 宿主本体是跨平台的；
-  本项目已在 **Windows**（初版开发者）与 **macOS**（2026-10-01 补齐）上分别跑通
-  8 道静态门禁与全部 8 条端到端流程，因此 `listing.json` 声明 `windows` + `macos`。
-  **Linux 与移动端仍未验证**，故不在声明之列。
-  （macOS 侧补齐过程中修掉的三处「测试写死的隐含假设」：月份绝对定位、输入框清空、
-  按钮掉出视口 —— 详见 `tools/` 内相应脚本的注释。）
+- **平台验证范围：Windows、macOS 与 Linux 均已实机验证；移动端仍未验证。**
+  - **Windows**（初版开发者）与 **macOS**（2026-10-01 补齐）：跑通 8 道静态门禁与全部 8 条
+    端到端流程，因此 `listing.json` 声明 `windows` + `macos`。
+  - **Linux**（Ubuntu 24.04.5 LTS，2026-10-04 补齐）：`run_e2e.sh` 10/10 全绿，
+    `run_conflict.sh` 17/21。**剩下4 条红不是应用缺陷，是夹具限制** ——
+    断言只扫视口内文本（`/snap` 只返回视口内控件），而目标在视口外；
+    同一份 bundle 在 v0.4.0 上跑出**完全相同的 4 条红**，与 Linux 无关。
+    详细归因见 `docs/regression-status-2026-10-04.md`。
+  - ⚠️ **Linux 复现前提**：须在 `Xvfb :99 -screen 0 1400x1050x24` 下运行。
+    窗口默认 1400x1050 时，导入面板会被挤出视口，连「导入」按钮都点不到
+    （症状与 P0-3 完全不同，别混为一谈）。
+  - （macOS 侧补齐过程中修掉的三处「测试写死的隐含假设」：月份绝对定位、输入框清空、
+    按钮掉出视口 —— 详见 `tools/` 内相应脚本的注释。）
+  - **移动端**（iOS / Android）宿主尚未提供，故完全未验证，不在声明之列。
 - **无账户与同步**：不登录、不跨设备同步、不订阅外部日历。
 
 ## 权限与隐私
@@ -392,13 +400,17 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 }
 ```
 
-`storage` = 宿主分配的本机私有存储（上限 16 MiB），宿主给用户展示的原话是：
+`storage` = 宿主分配的本机私有存储（上限 16 MiB）。宿主对 `storage` 给用户展示的原话是：
 
 > Keeps its own data on this device, in a space only it can read.
-> Never contacts the network.
 
-也就是：**应用在技术上无法把任何数据发出去**。无需「请相信我们」，权限清单就能证明。
-完整说明见 [PRIVACY.md](PRIVACY.md)。
+**日程数据不出设备**，这一点无需「请相信我们」，代码路径就能证明：导入、解析、冲突检测、
+改期、导出五条链路没有任何一处触及网络；唯一的对外请求是天气，且只发经纬度与日期、
+不带任何事件字段（逐项对照见 [PRIVACY.md](PRIVACY.md)）。
+
+⚠️ 上面那句宿主原话里的 `Never contacts the network.` **只适用于 `storage` 权限**。
+应用已申请 `net`，因此不能拿它当「整个应用不联网」的依据——依据是上面的
+`network.hosts` 白名单（只有 3 个 Open-Meteo 域）与代码审查。
 
 ## 演示视频
 

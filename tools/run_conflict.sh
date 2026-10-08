@@ -35,6 +35,12 @@ snapfile() { $CURL "http://127.0.0.1:$PORT/snap" -o "$OUT/snap.json"; }
 PASS=0; FAIL=0
 expect() {  # $1 = 期望子串, $2 = 用例说明
   local got
+  # ⚠️ 必须先滚回页顶（2026-10-08 P0-3）：状态条与 metric 都在**页头**，
+  #   而 [4/9][5/9][8/9] 为了点 conflict_bar 上的按钮必须滚到底 ——
+  #   滚到底后页头出视口，expect 什么都读不到（实测「已应用 1 条改期建议 ·
+  #   剩余 0 处冲突」确实存在，只是读不到）。与 expect_scroll 方向相反，
+  #   因为它两个目标分别在页面两端。
+  to_top
   got=$("$PY" tools/e2e.py texts 2>&1)
   if printf '%s' "$got" | grep -qF "$1"; then
     echo "  OK   $2"; PASS=$((PASS+1))
@@ -43,10 +49,42 @@ expect() {  # $1 = 期望子串, $2 = 用例说明
     FAIL=$((FAIL+1))
   fi
 }
+# ★ 2026-10-08（P0-3）新增：滚动可见性感知版断言。
+#   根因（实测，不是原报告说的「Xvfb 动画时序」）：`/snap` **只返回视口内控件**，
+#   而 expect 只扫视口内文本 —— 目标在视口外时读不到，**轮询一万次也读不到**。
+#   实测：冲突条在 scroll 400（滚到底）时才进入视口，`conflict_panel
+#   r=[0,249,412,52]`；在 scroll -400（滚到顶）时 `conflict_panel` 完全不在渲染树，
+#   连带子节点 `conflict_bar` / `more_btn`（就在 conflict_bar 里）一起消失 ——
+#   而「详情 / 回滚 / 应用建议」三个按钮**全都挂在 conflict_bar 内部**，
+#   所以父容器出视口 = 三个按钮一起点不到，`more` 报「找不到按钮」。
+#   ⚠️ 方向很关键：必须**向下滚**（dy 正值）。先 to_top 会把已经在视口里的
+#   目标再推出视口，反而制造失败。
+expect_scroll() {  # $1 = 期望子串, $2 = 用例说明
+  local got i
+  got=$("$PY" tools/e2e.py texts 2>&1)
+  if printf '%s' "$got" | grep -qF "$1"; then
+    echo "  OK   $2"; PASS=$((PASS+1)); return 0
+  fi
+  for i in 1 2 3 4 5 6; do
+    "$PY" tools/e2e.py scroll 400 >/dev/null 2>&1
+    got=$("$PY" tools/e2e.py texts 2>&1)
+    if printf '%s' "$got" | grep -qF "$1"; then
+      # 找到后**不要**留在这里：后续 expect / metric_is 要读页头，
+      # 而它们各自会先 to_top，所以这里无需回滚（多滚一次只是浪费时间）。
+      echo "  OK   $2（向下滚动 $i 次后进入视口）"; PASS=$((PASS+1)); return 0
+    fi
+  done
+  echo "  FAIL $2 —— 向下滚到底仍未出现「$1」"
+  FAIL=$((FAIL+1)); return 1
+}
+# 把冲突条滚进视口（点「详情」之前必须做：按钮挂在 conflict_bar 里，
+# 父容器出视口就一起消失）。
+to_conflict() { for _ in 1 2 3; do "$PY" tools/e2e.py scroll 400 >/dev/null 2>&1; done; }
 # 读「事件库」指标（= events.len()）。dump 一行形如
 #   metric_events [Label] r=[...]  '4'
 metric_is() {  # $1 = 期望值, $2 = 用例说明
   local got
+  to_top   # metric_* 在页头，滚到底就出视口（理由同 expect）
   got=$("$PY" tools/e2e.py dump 2>&1 | grep -F "metric_events [Label]" | head -1 \
         | grep -oE "'[^']*'" | tail -1 | tr -d "'")
   if [ "$got" = "$1" ]; then
@@ -63,6 +101,9 @@ get_entry() {
   "$PY" tools/e2e.py entry "$1" 2>&1
   cat "$1"
 }
+# 滚回页顶/ 滚到底。⚠️ 滚完必须滚回来：列表是 ScrollYView，滚下去之后顶部的
+# 「导入」按钮会离开视口、从渲染树里消失，need() 就找不到了。
+to_top() { for _ in 1 2 3 4 5 6; do "$PY" tools/e2e.py scroll -400 >/dev/null 2>&1; done; }
 
 echo
 echo "=== [2/9] 导入基线 seed.ics（3 个事件，无冲突）==="
@@ -91,14 +132,20 @@ metric_is "4" "事件库应为 4 个事件"
 
 echo
 echo "=== [4/9] 展开冲突详情 ==="
+# ⚠️ 必须先滚到底（2026-10-08 P0-3）：「详情 / 回滚 / 应用建议」三个按钮全都挂在
+#    conflict_bar 里，而 conflict_panel 在页面很下方 —— 滚到顶时它整条不在渲染树，
+#    `more` 只会报「找不到按钮「详情」」（该行又被下面的 grep 吃掉，看着像什么都没发生）。
+to_conflict
 "$PY" tools/e2e.py more 2>&1 | grep -E "重叠|可动|建议|发现|保留" | tail -8
 shot "04-conflict-detail.png"
 # ★ 关键硬证据：冲突必须给出**量化时长**（30 分钟），不是笼统「有冲突」。
-expect "重叠 30 分钟" "冲突详情应量化重叠时长"
-expect "保留" "冲突详情应指出哪一项保留"
+#   用 expect_scroll 而不是 expect：冲突详情在展开态下面更深的位置。
+expect_scroll "重叠 30 分钟" "冲突详情应量化重叠时长"
+expect_scroll "保留" "冲突详情应指出哪一项保留"
 
 echo
 echo "=== [5/9] 应用改期建议 ==="
+to_conflict
 "$PY" tools/e2e.py advice 2>&1 | grep -E "已应用|剩余|没有待处理" | tail -4
 sleep 1
 shot "05-after-advice.png"
@@ -109,6 +156,9 @@ metric_is "4" "事件数仍为 4（被挪走的会更新而不是删除）"
 
 echo
 echo "=== [6/9] 导出 ICS（写入输入框）==="
+# ⚠️ 必须先滚回页顶（2026-10-08 P0-3）：工具条上的「导入 / 导出」在页头，
+#   [4/9][5/9] 为了点冲突条按钮已经滚到底，「导入」会离开视口、从渲染树消失。
+to_top
 "$PY" tools/e2e.py open 2>&1 | tail -1
 "$PY" tools/e2e.py export 2>&1 | grep -E "entry 长度|DTSTART|DTEND|BEGIN:VEVENT|SUMMARY" | head -20
 shot "06-export.png"
@@ -126,7 +176,16 @@ if printf '%s' "$ENTRY" | tail -1 | grep -qF "END:VCALENDAR"; then
 else
   echo "  FAIL 导出文本不是以 END:VCALENDAR 结尾"; FAIL=$((FAIL+1))
 fi
-expect "BEGIN:VCALENDAR" "导出文本应能在界面上读到 BEGIN:VCALENDAR"
+# ★ 2026-10-08（P0-3）：原来这里用 expect "BEGIN:VCALENDAR"，即在**视口内文本**
+#   里找导出内容。BEGIN:VCALENDAR 在输入框**首行**，而可见区不从首行起 →
+#   永远读不到 → 4 条红里必红。改成对输入框断言读**真实值**
+#   （`e2e.py entry` 已按 `val` 优先实现，见 e2e.py:62-79），这才是「导出了
+#   合法 ICS」的判据；视口里能不能看见首行是排版问题，不是导出问题。
+if printf '%s' "$ENTRY" | grep -qF "BEGIN:VCALENDAR"; then
+  echo "  OK   输入框真实值含 BEGIN:VCALENDAR"; PASS=$((PASS+1))
+else
+  echo "  FAIL 输入框真实值不含 BEGIN:VCALENDAR"; FAIL=$((FAIL+1))
+fi
 
 echo
 echo "=== [7/9] 往返幂等：把导出的 ICS 原样再解析一次 ==="
@@ -144,7 +203,9 @@ metric_is "4" "往返后事件库仍为 4"
 echo
 echo "=== [8/9] 回滚上一次导入 ==="
 # ★ 回滚前的「取消」会把面板收起来，但回滚是按快照走的；面板收起来
-#    后「回滚」按钮仍在 —— 直接 rollback。
+#   后「回滚」按钮仍在 —— 直接 rollback。
+#   ⚠️ 但它挂在 conflict_bar 里，滚到顶时整条不在渲染树 → 必须先滚到底。
+to_conflict
 "$PY" tools/e2e.py rollback 2>&1 | tail -2
 sleep 1
 "$PY" tools/e2e.py texts 2>&1 | grep -E "回滚|没有可回滚" | tail -3
@@ -154,10 +215,15 @@ metric_is "4" "回滚把状态恢复到导入 conflict 之前（仍是 4 个：s
 
 echo
 echo "=== [9/9] 关于页（吉祥物 + CC BY 4.0 署名）==="
+# ⚠️ 必须先滚回页顶：「关于」按钮在页头（r≈[365,51]），[8/9] 已经滚到底。
+to_top
 "$PY" tools/e2e.py about >/dev/null 2>&1
 "$PY" tools/e2e.py texts 2>&1 | grep -E "CC BY|Noto|OctoSense|队伍|Apache|storage|清空事件库|收起" | tail -8
 shot "09-about.png"
-expect "Apache" "关于页应包含 Apache-2.0 字样"
+# ⚠️ 「Apache-2.0」那行在关于页文案很下方（main.splash:7632），而 expect 只扫
+#   视口内文本 → 读不到。用向下滚的expect_scroll（2026-10-08 P0-3）。
+expect_scroll "Apache" "关于页应包含 Apache-2.0 字样"
+# 「Noto」在关于页靠上部分，滚到底反而推出视口 —— 用 expect（它会先 to_top）。
 expect "Noto" "关于页应包含吉祥物 Noto Animated Emoji 字样"
 
 echo

@@ -692,7 +692,12 @@ def main():
             print("FAIL: 找不到输入框")
             sys.exit(1)
         txt = ""
-        for k in ("t", "v", "text", "value"):
+        # ⚠️ 2026-10-08（P0-3）：字段优先级必须是 **`val` 优先**，与
+        #   `entry_text()`（:62-79）保持一致。原实现按 `t` 优先，而 `t` 是
+        #   **渲染后的显示文本** —— 空输入框时 `t` 是占位提示
+        #   （实测 'BEGIN:VCALENDAR …'），会把空态读成「有一串占位文字」，
+        #   于是 run_conflict.sh 的导出断言打在占位提示上，而不是真实导出值。
+        for k in ("val", "v", "value", "t", "text"):
             if k in node and node[k] is not None:
                 txt = str(node[k])
                 break
