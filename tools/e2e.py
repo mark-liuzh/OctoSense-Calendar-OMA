@@ -37,10 +37,129 @@ def _get(path):
         return r.read().decode("utf-8", "replace")
 
 
-def snap():
+def _stable(pred, tries=5, settle=0.35):
+    """反复求值 pred，直到它连续 `settle` 秒都为真（或超时）。
+
+    ⚠️ 为什么需要（2026-10-09 实测，连跑 5 轮有 2 轮红）：宿主的翻月/ 切来源
+    是**异步落地**的，且偶发「落地后又弹回原值」。原先 `goto` 闭环确认一次
+    就返回，脚本再另起一条命令去读 —— 两条命令之间存在窗口，宿主正好在
+    窗口里复位状态，于是「翻月断言 OK、随后的 fest 读到上一个月」。
+    这里要求**状态稳定一段时间**才算数，且由同一条命令接着输出 fest，
+    消除「确认」与「读取」之间的空档。
+    """
+    last = None
+    ok_since = None
+    deadline = time.time() + tries * 3.0
+    while time.time() < deadline:
+        last = pred()
+        if last:
+            if ok_since is None:
+                ok_since = time.time()
+            elif time.time() - ok_since >= settle:
+                return True, last
+        else:
+            ok_since = None
+        time.sleep(0.15)
+    return False, last
+
+
+def _render_ready(s):
+    """判断这份快照是不是**内容与当前月份一致**的月历。
+
+    ⚠️ 三轮返工才对（2026-10-09），前两版的判据都抓错了东西：
+     ① 最初数「空文本的方形按钮」= 42 个格子 —— **错**。那42 个点击层
+        ButtonFlat 是**静态声明**的，翻月时并不会被清空，所以翻到一半也照样是
+        42 个 ⇒ 判据恒为真，等于没判。
+     ② 改成数格子上的**日期数字** —— 对。日期数字由cal_cells() 每帧按当前
+        view_month 重新生成，重绘中途会是 0 个。
+     ③ 但「有数字」还不够：实���抓到过**新旧混杂**的一帧 —— 月份标题已经是
+        10 月、格子里的日期数字与标记点却还是 9 月的（DOTS 读出 5 而不是 8）。
+         所以判据必须是「**连续多帧内容完全一致**」，见 _stable_consistent()。
+
+    这里只回答「月历格子画出来了没有」；「这一帧内部是否自相矛盾」交给上层。
+    """
+    n = 0
+    for node in s:
+        t = str(node.get("t") or "").strip()
+        if t.isdigit() and 1 <= int(t) <= 31:
+            n += 1
+    # 一个月 42 格里最多 31 个数字行；渲染完整时至少 28（2 月平月也有 28）
+    return n >= 28
+
+
+def _fingerprint(s):
+    """这份快照里「与月份相关」的内容指纹。
+
+    只取月历区域（y 在月历行范围内）与标题、标记点、节日行 —— 工具条、
+    状态条、底部按钮在这些操作下不变，混进来会稀释掉变化。
+    用途：判断连续两帧**内容完全一致**（见 _stable_consistent）。
+    """
+    parts = []
+    for node in s:
+        t = str(node.get("t") or "").strip()
+        r = node.get("r") or [0, 0, 0, 0]
+        ty = node.get("ty")
+        # 月历区大致 y∈[380, 800]（6 行 × 52px + 行距），加上标题与说明行
+        if 40 <= r[1] <= 800 and (t or ty in ("View", "ViewFlat", "RoundedView",
+                                            "CircleView")):
+            parts.append("%s|%s|%s" % (t, ty, r))
+    return "\n".join(parts)
+
+
+def _stable_consistent(tries=8, settle=0.3):
+    """连续 `settle` 秒内，快照内容指纹保持完全一致才算稳定。
+
+    ⚠️ 这是本轮最关键的一处（2026-10-09）：宿主翻月时**不是**原子的
+    「清空 → 整帧重绘」，而是分步更新 —— 实测抓到过月份标题已更新、
+    格子日期与标记点还是上一个月的「半帧」。此时任何按月份写的断言都会
+    报出「MONTH 对、DOTS 错」这种自相矛盾的红。
+
+    判据用**整帧内容指纹相同**（而不是「某几个字段看起来对」），
+    所以无论是标题先更新还是格子先更新，都会被挡下。
+    """
+    fp = None
+    ok_since = None
+    deadline = time.time() + tries * 4.0
+    while time.time() < deadline:
+        s = snap(wait_render=False)
+        cur = _fingerprint(s)
+        if _render_ready(s) and cur == fp:
+            if ok_since is None:
+                ok_since = time.time()
+            elif time.time() - ok_since >= settle:
+                return True, s
+        else:
+            fp = cur
+            ok_since = None
+        time.sleep(0.15)
+    return False, snap(wait_render=True)
+
+
+def snap(wait_render=False, timeout=3.0):
+    """取一份 /snap 快照。
+
+    ⚠️⚠️ `wait_render` 默认为**关**（2026-10-09 改）。理由是一个自己踩的坑：
+       我曾把「等月历渲染就绪」放进这里当默认，于是**导入面板**这类
+       根本没有日历格子的页面也一起等 —— 而 _render_ready 数的是日期数字，
+       面板页恒为 0 ⇒ 每次 snap() 都白等满timeout。
+       run_e2e 的 [4/7]「灌入 seed.ics」一步有几十次 snap() 调用，
+       于是那一轮回归从 40 秒变成**十几分钟**，看起来像死锁。
+       教训：**渲染就绪这类判据只在该用它的地方用**（goto / cycle /
+       dumpsnap 这三个真正关心月历的命令），不要塞进通用入口。
+    """
     raw = _get("/snap")
     io.open(SNAP, "w", encoding="utf-8").write(raw)
-    return json.loads(raw)["s"]
+    s = json.loads(raw)["s"]
+    if wait_render and not _render_ready(s):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.15)
+            raw = _get("/snap")
+            s = json.loads(raw)["s"]
+            if _render_ready(s):
+                io.open(SNAP, "w", encoding="utf-8").write(raw)
+                break
+    return s
 
 
 def click(x, y):
@@ -273,7 +392,7 @@ def shift_month(ym, k):
     return (t // 12, t % 12 + 1)
 
 
-def click_month_once(label, before, timeout=4.0, interval=0.25):
+def click_month_once(label, before, timeout=10.0, interval=0.25):
     """点一次翻月按钮，并**等到标题真的变了**。
 
     返回 (新月份, True)  —— 标题已变化；
@@ -282,6 +401,11 @@ def click_month_once(label, before, timeout=4.0, interval=0.25):
     `wait_btn` 只保证按钮**存在**，不保证点击被**处理**；上一步点击还在渲染时
     紧随的点击会被吞掉。本函数只断言「标题变了没有」，不引入任何与平台或渲染
     速度绑定的时间常量 —— 所以 Windows / macOS / 更慢的机器上行为一致。
+
+    ⚠️ timeout 从 4s 加到 10s（2026-10-09）：宿主的点击是**排队异步落地**的，
+    实测偶发延迟超过 4 秒 —— 于是这里判超时、调用方重试，**多点的那个 `<`
+    稍后才落地**，把月份多翻一格 ⇒ 表现为「状态滞后一步」。
+    这里宁可多等（最坏情况是本来就点空了），也不要因为等不及而重复点击。
     """
     n, s = wait_btn(label)
     if not n:
@@ -707,6 +831,25 @@ def main():
                     "TZID=", "VALUE=DATE", "T140000Z", "SEQUENCE:", "UID:"):
             print(f"  {'OK ' if key in txt else 'MISS'} {key}")
 
+    elif cmd == "dumpsnap":
+        # 把**等渲染完成之后**的 /snap 原样写到文件。
+        # 为什么需要（2026-10-09）：截图与「取点矩形」必须来自**同一时刻**，
+        # 否则 dotcolor 会拿新布局的矩形去读旧截图的像素 ⇒ 整月错配。
+        # 裸 curl /snap 不会等渲染，可能落在翻月后的重绘空窗里，
+        # 导出一份**没有日历格子**的树（实测症状：DOTS/BAN 全为 0）。
+        # 用法：python e2e.py dumpsnap <out.json>
+        out_path = sys.argv[2] if len(sys.argv) > 2 else SNAP
+        t0 = time.time()
+        ok, s = _stable_consistent()
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"s": s}, f)
+        print("SNAPSHOT=%s nodes=%d ready=%s stable=%s" % (
+            out_path, len(s), _render_ready(s), "yes" if ok else "no"))
+        if not ok:
+            # 不静默放过：0 字节/半帧快照会让后续像素判定变成「（无）」，
+            # 报出与真实原因无关的红。
+            print("FAIL: 未能等到内容一致的稳定帧（等了 %.1fs）" % (time.time() - t0))
+
     elif cmd == "btn":
         # 按**按钮文案**点（不是坐标）。用于分区导航（待办/心情/目标/小知识）
         # 与视图切换（月/周/日）—— 这些按钮的位置会随面板开合而变，
@@ -729,16 +872,47 @@ def main():
         print(f"scrolled dy={sys.argv[2]}")
 
     elif cmd == "cycle":
+        # 切换节日来源（节日 中国 → 国际 → 全部 → 中国）。
+        # ⚠️ 闭环（2026-10-08/09 加）：原来点一下就直接读，既不等也不校验，
+        #   宿主偶发吞掉点击时 SRC 仍是旧值，而 run_festival.sh 那几处
+        #   `cycle >/dev/null 2>&1` 又把输出丢了 ⇒ 整步静默地在旧来源上断言。
+        #   现在：点 → 等文案真的变了 → **再稳定 0.35s** → 同一次调用里直接
+        #   输出 fest（供 shell 断言），不给「确认」与「读取」之间留窗口。
         n, s = wait_btn("节日")
         if not n:
             print("FAIL: 找不到节日来源按钮")
             print("  现有按钮:", buttons_of(s))
             return
         before = str(n.get("t"))
+
+        def _src():
+            nn = btn(snap(), "节日")
+            return str(nn.get("t")) if nn else None
+
+        def _changed():
+            v = _src()
+            return v if (v is not None and v != before) else None
+
         click_node(n)
-        n2, s2 = wait_btn("节日")
-        print(f"SRC={str(n2.get('t'))}")
+        ok, seen = _stable(_changed)
+        if not ok:
+            # 点击被宿主吞掉了：重发一次再等
+            nn = btn(snap(), "节日")
+            if nn:
+                click_node(nn)
+            ok, seen = _stable(_changed, tries=3)
+        # ⚠️ `_stable` 返回 (bool, 谓词最后一次的值)，谓词返回的是**新文案本身**
+        #   （不是 True）—— 取错会打印出 `SRC=True`（2026-10-09 踩过）。
+        #⚠️ 再等「整帧内容一致」：切来源同样会分步更新，
+        #   实测出现过按钮文案已是「节日 国际」、格子里国庆绿点还在的半帧。
+        _, s_after = _stable_consistent(tries=4)
+        after = str(festival_source(s_after) or seen or _src() or before)
+        print(f"SRC={after}")
         print(f"SRC_BEFORE={before}")
+        if not ok:
+            print("WARN: 节日来源未发生变化（点击可能被宿主吞掉）")
+        else:
+            _emit(s_after)
 
     elif cmd == "goto":
         # 绝对定位（推荐）：python e2e.py goto 2026-09
@@ -747,12 +921,33 @@ def main():
             print("FAIL: 用法 e2e.py goto YYYY-MM")
             return
         y, m = sys.argv[2].split("-", 1)
-        cur, ok = goto_month(int(y), int(m))
-        _emit(snap())
-        print("MONTHS_TARGET=%s MONTHS_ACTUAL=%s" % (
-            sys.argv[2], ("%d-%02d" % cur) if cur else "None"))
-        if not ok:
-            print("FAIL: 未能到达 %s（实际 %s）" % (sys.argv[2], cur))
+        ty, tm = int(y), int(m)
+        # ⚠️ 必须「整轮重试直到稳定」，而不是 goto_month 走一遍就收工
+        #（2026-10-09 实测，连跑 5 轮有 2 轮红）：
+        #   宿主的点击是**排队异步落地**的，延迟可以超过 click_month_once 的
+        #   4 秒等待窗。表现是**状态滞后一步**：本步goto 2026-09 读到的还是
+        #   10 月（报「翻月失败」），而下一步 goto 2026-10 反而读到了 9 月 ——
+        #   看着像脚本自己把月份翻反了。
+        #   所以：外层循环反复「goto_month + 稳定确认」，直到某一次真正停稳。
+        cur, ok, stable = None, False, False
+        s = None
+        for attempt in range(6):
+            cur, ok = goto_month(ty, tm)
+            # ⚠️ 用「整帧内容一致」而不是「月份标题等于目标」：
+            #   宿主分步更新，实测抓到过标题已是 10 月、格子与标记点还是 9 月的
+            #   半帧 —— 只看标题会放它过去，然后 fest 输出上个月的点数。
+            stable, s = _stable_consistent()
+            if ok and stable and month_of(s) == (ty, tm):
+                break
+        if s is None:
+            s = snap()
+        cur2 = month_of(s) or cur
+        _emit(s)
+        print("MONTHS_TARGET=%s MONTHS_ACTUAL=%s STABLE=%s ATTEMPTS=%d" % (
+            sys.argv[2], ("%d-%02d" % cur2) if cur2 else "None",
+            "yes" if stable else "no", attempt + 1))
+        if not (ok and stable):
+            print("FAIL: 未能稳定停留在 %s（实际 %s）" % (sys.argv[2], cur2))
 
     elif cmd == "months":
         # 相对翻月。★ 2026-10-01 改为**闭环**：算出目标月后走 goto_month，
@@ -780,15 +975,32 @@ def main():
         # 回读截图像素，给出日历格子里每个小标记的**实际颜色语义**。
         # 为什么必须做这一步：/snap 快照只有 i/ty/r/w，**不带颜色**，
         # 所以「放假是绿点、照常上班是黑点、调休写班字」只能靠回读像素验证。
-        # 用法：python e2e.py dotcolor <png>
-        # 输出：DOTKIND  = 每个点的语义（OK / WORK / EVENT / INK / NONE）
-        #       DOTCOLORS= 每个点的代表色 hex，便于人眼对照
-        #       DOTXY / BANXY / BANKIND
+        #
+        # ⚠️⚠️ 用法：`python e2e.py dotcolor <png> [snapshot.json]`
+        #   第二个参数是**与该png 同一次快照**导出的 /snap JSON。
+        #   必须传！否则这里会重新 `snap()` 拿**当前实时**布局，
+        #   而png 是几十毫秒~几百毫秒前拍的 ——
+        #   翻月/ 切节日来源时两者会**错配一个月**（2026-10-08 实测踩到：
+        #   文本断言读的是新月份、像素断言读的是旧截图，于是
+        #   「期望 8 个点、实际 5 个」这种完全看不出所以然的红）。
+        #   错配的表现很像「应用画错了」，但根因是测试自己拿了两个时刻的证据。
+        # ⚠️ 这里**不要**再`import json`：json 已在模块顶层导入过。
+        #   在 main() 里重复 import 会让 Python 把 `json` 判定为**函数局部变量**，
+        #   于是同一函数中更早的 dumpsnap 分支（2026-10-09）一用 json 就炸
+        #   UnboundLocalError —— 表现为所有同源快照都是 0 字节、像素判定全空。
         import zoom
         png = sys.argv[2] if len(sys.argv) > 2 else ".runtime/shot.png"
+        snapfile = sys.argv[3] if len(sys.argv) > 3 else ""
         w, h, ch, buf = zoom.read_png(png)
         sc = w / 412.0
-        s = snap()
+        if snapfile:
+            with open(snapfile, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            # 与 snap() 同款解包：/snap 的顶层是 {"s": [...]}（不是 nodes/tree）。
+            # 之前误按 nodes/tree 找→ 永远拿到空列表 ⇒ 所有像素判定变成「（无）」。
+            s = raw["s"] if isinstance(raw, dict) and "s" in raw else raw
+        else:
+            s = snap()
         m = holiday_marks(s)
         kinds, cols = [], []
         for r in m["日历格子点"]:
