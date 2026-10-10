@@ -1334,6 +1334,277 @@ fn build_advice(conflicts, list) {
 }
 
 
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.0 · AI 参与改期（初赛评委建议 1）
+//
+// 初赛评语：「本作品没有任何 Agent/模型调用，按细则『需求与任务价值』
+// 上限 13 分是主要失分处；复赛任务自动化方向可以考虑接入 model.complete
+// 做冲突消解建议。」
+//
+// ── 为什么现在能做 ────────────────────────────────────────────
+// OctoSense desktop rc.2（2026-10-09）起：`model` 能力已进 App Hub 的
+// KNOWN_CAPABILITIES，ai-host 也真的注册了 model.complete 服务。
+// 官方文档里「即将推出 / 暂时不要让提交依赖它」的说法截至 9/27，已过期。
+//
+// ── 设计立场：模型输出是**不可信输入**，不是结论 ────────────────
+// 规则引擎（commitment_weight + propose_slot）仍然先算出一份方案；
+// 模型可以在此基础上**改主意**，提出自己的时段。但模型给的东西必须
+// 穿过下面 7 道闸才允许写进事件库：
+//
+//   闸 1  形状闸    字段齐、类型对、时长为正
+//   闸 2  身份闸    只能动规则引擎已经判定「可动」的那一条（不许换人）
+//   闸 3  日期闸    8 位、真实存在的日历日、且落在允许的偏移范围内
+//   闸 4  时段闸    起点<终点、不跨 24:00、不超出当天可搜索窗口
+//   闸 5  日历闸    目标时段不与**任何**其它事件重叠（含跨天、含全天）
+//   闸 6  同意闸    用户点了「采纳」才写；模型不能自己落地
+//   闸 7  复核闸    写入后重扫冲突；若冲突数没下降则自动回滚
+//
+// 任何一道不过 → 回退到规则引擎的方案，界面上明说原因。
+// 往返无损（导出再导入 0/0/N）由「写入走 reschedule() 唯一通道」保证：
+// 模型只能改变「挪到哪个时段」，碰不到 DTSTART 的类型后缀、TZID、
+// EXDATE/RDATE —— 那些字段 reschedule() 一律沿用原值。
+//
+// ── 不可用是正常状态 ──────────────────────────────────────────
+// 本机 card-host 不注册 model 服务（只有真机 Shell 才注册），答辩现场
+// 也可能没配 provider。所以失败分支必须完整降级：AI 区退回「未启用」，
+// 其余 8 条流程与 v0.4.1 逐字一致。
+//════════════════════════════════════════════════════════════════
+
+let ai_state = 0          // 0 未请求 / 1 请求中 / 2 已得方案 / 3 不可用或被闸拦下
+let ai_plan = nil         // 通过 1-5 闸的方案 {mover, day, start, end, reason}
+let ai_why = ""           // 模型的说明（一句，≤ 60 字）
+let ai_reject = ""        // 被哪道闸拦下 + 原因（界面上必须说清楚，不能静默回退）
+
+// 单次调用上限。宿主侧默认 6 次/分钟、100 次/UTC 日、10 万 token。
+// 应用侧再收一道：单次导入的冲突建议一次只问一条，避免把预算烧光。
+let AI_TASK = "你在帮一个日历应用解决时间冲突。规则引擎已经选定了一条「可移动」的事件，并给出了一个可用空档。你可以给出更好的安排，也可以同意规则引擎。严格按要求输出，不要输出 URL。"
+
+// ★ 超时兜底（2026-10-10 实测踩到，**必留**）。
+//   本机 card-host **不注册** model 服务：host.request 既不立刻回失败，
+//   也不触发回调 —— 状态条会永久停在「正在请模型给一个改期方案…」。
+//   官方文档也写明「一个从不回答的服务会超时」，但超时由宿主计时、
+//   回调是否回来没有保证。所以应用侧必须自己兜一个底：
+//   请求后起一个 12 秒的 timeout，回来时若还停在「请求中」就主动降级。
+let AI_TIMEOUT_SEC = 12
+let ai_timer = nil
+let ai_token = 0        // 每次请求自增；回调/超时都靠它判断「是不是同一次」
+
+
+// 闸 1-5：校验模型给的方案。返回 nil 表示通过，返回字符串表示拒绝原因。
+// ⚠️ 这里必须**逐项**校验而不是信任 schema：schema 保证的是「形状」，
+//    保证不了「这个时段真的空着」「这个日子真的存在」。
+fn ai_verify(p) {
+    if p == nil { return "模型没有给出方案" }
+    // 闸 1 形状
+    if p.mover == nil || p.day == nil || p.start == nil || p.end == nil {
+        return "方案字段不全"
+    }
+    let s = p.start.to_f64()
+    let e = p.end.to_f64()
+    if !(s >= 0) { return "开始时刻不是数字" }
+    if !(e > s) { return "结束时刻必须晚于开始时刻" }
+    if advice.len() == 0 { return "当前没有待处理的冲突" }
+    let a = advice[0]
+    // 闸 2 身份：只能动规则引擎判定为「可动」的那条
+    if p.mover != a.mover { return "只能移动规则引擎判定可动的那条" }
+    // 闸 3 日期
+    let day = "" + p.day
+    if day.len() != 8 { return "日期必须是 8 位" }
+    if !ics_date_ok(day) { return "日期 " + day + " 不是真实存在的日子" }
+    // 只允许在同一天或相邻几天内挪 —— 防止模型把会议甩到几个月后。
+    let base = a.day.to_f64()
+    let off = day.to_f64() - base
+    if off < -1 || off > 7 { return "目标日期离原日期太远（只允许 -1 到 +7 天）" }
+    // 闸 4 时段
+    if s < 0 || e > 24 * 60 { return "时段必须在一天之内" }
+    if s != ipart(s) || e != ipart(e) { return "时段必须对齐到整分" }
+    // 闸 5 日历：目标时段不能撞上任何其它事件
+    let ss = day.to_f64() * 1440 + s
+    let se = day.to_f64() * 1440 + e
+    for k in events.len() {
+        let ev = events[k]
+        if ev.status == "CANCELLED" { continue }
+        if ev.uid == p.mover { continue }      // 它自己正在被挪开，不算撞
+        // 全天事件按整天占位处理，不能被塞进它的任何一段时间
+        if ev.all_day {
+            if day.to_f64() == date_num(ev.dtstart) { return "这一天是全天事件，不能安排别的" }
+            continue
+        }
+        if se <= abs_start(ev) { continue }
+        if abs_end(ev) <= ss { continue }
+        return "与「" + ev.summary + "」重叠"
+    }
+    return nil
+}
+
+
+// 闸 6：用户点「采纳模型方案」才写入。
+fn apply_model_plan() {
+    if ai_state != 2 || ai_plan == nil {
+        set_status_warn("还没有可采纳的模型方案")
+        return
+    }
+    let p = ai_plan
+    let before = conflicts.len()
+    let n = reschedule(p.mover, p.day, p.start, p.end)
+    if n == 0 {
+        // reschedule 拒绝的三种情况：uid 找不到 / 全天 / 带 RRULE
+        set_status("模型方案未能应用（涉及全天事件、重复事件，或该事件已不存在）")
+        ai_state = 3
+        ai_plan = nil
+        ai_reject = "写入被拒绝"
+        sync_conflict()
+        return
+    }
+    save()
+    scan_conflicts()
+    // 闸 7 复核：应用后冲突必须减少。没减少说明方案其实没解决问题 ——
+    // 这时回滚，绝不留下一个「改了但没用」的状态。
+    if conflicts.len() >= before {
+        undo_last()
+        scan_conflicts()
+        set_status_warn("模型方案没有减少冲突，已自动回滚 · 仍可改用规则建议")
+        ai_state = 3
+        ai_plan = nil
+        ai_reject = "应用后冲突未减少"
+        sync_conflict()
+        return
+    }
+    ai_state = 3
+    ai_plan = nil
+    set_status_ok("已采纳模型方案 · 剩余 " + ("" + conflicts.len()) + " 处冲突")
+    refresh_all()
+}
+
+
+// 请求超时（12 秒内没等到回调）—— 主动降级，别把用户卡在「请求中」。
+// token 是发起请求时的快照：若用户在这 12 秒内又点了一次（token 已变），
+// 本次超时属于「过期的那一次」，**不能**覆盖新请求的状态。
+fn ai_expired(token) {
+    if token != ai_token { return }
+    if ai_state != 1 { return }
+    ai_state = 3
+    ai_plan = nil
+    ai_why = ""
+    ai_reject = "本机没有可用的模型服务（12 秒无响应）"
+    set_status_warn("模型服务无响应 · 规则建议照常可用")
+    sync_conflict()
+}
+
+
+// 请求模型给一个改期方案。
+fn ask_model() {
+    if advice.len() == 0 {
+        set_status_warn("当前没有待处理的冲突")
+        return
+    }
+    // host.has 只说明权限已授予，不说明有没有服务响应 —— 失败分支仍要处理。
+    if !host.has("model") {
+        ai_state = 3
+        ai_plan = nil
+        ai_why = ""
+        ai_reject = "本机未授予 model 能力"
+        set_status_warn("本机未授予 model 能力 · 规则建议照常可用")
+        sync_conflict()
+        return
+    }
+    let a = advice[0]
+    ai_state = 1
+    ai_reject = ""
+    ai_token = ai_token + 1
+    set_status("正在请模型给一个改期方案…")
+    // ⚠️⚠️ 这里**不能**调 ui.ai_label.render()（2026-10-10 实测踩到）：
+    //   Label 没有 render() 方法，调用会在宿主日志里报
+    //   `widget method render not found for uid ...`（widget_async.rs:1456）
+    //   并**中断整个 ask_model** —— 于是后面的 start_timeout 压根没执行，
+    //   界面永久停在「请求中」。
+    //   AI 区的文字由 sync_conflict() 统一刷（那里 set_text 后会重画父容器），
+    //   这里只需要把状态条刷出来就够了。
+
+    // 超时兜底：先起表，再发请求。反过来的话，请求若立刻回调，
+    // 表会在回调之后才建起来，永远停不掉（下一轮请求也不会再起新的）。
+    if ai_timer != nil { stop_timer(ai_timer) }
+    ai_timer = start_timeout(AI_TIMEOUT_SEC, || ai_expired(ai_token))
+
+    // ⚠️⚠️ 不能用三元 `a.has_slot ? x : y` —— Splash 的 `?:` 不支持，
+    //   解析器会把它误识别成「named arg」（AGENTS.md 已记的坑，main.splash:6062
+    //   那条血泪注释就是同一个）。一律写成 if/else 先算出字符串。
+    let slot_txt = "当天没有空档"
+    if a.has_slot {
+        slot_txt = pretty_time(a.slot_start) + "-" + pretty_time(a.slot_end)
+    }
+
+    // 只送判断所需的最小字段：两个标题、时长、权重、规则引擎的建议与空档。
+    // 地点 / 描述 / 参与人 / 附件一律不送 —— 送得越少，泄漏面越小。
+    host.request("model.complete", {
+        task: AI_TASK
+        input: {
+            日期: a.day
+            固定事件: a.keeper_summary
+            固定事件权重: a.keeper_label
+            可动事件: a.mover_summary
+            可动事件权重: a.mover_label
+            可动事件标识: a.mover
+            重叠分钟: a.minutes
+            可动事件时长分钟: a.dur
+            规则引擎建议: a.why
+            规则引擎空档: slot_txt
+        }
+        schema: {
+            type: "object"
+            required: ["mover" "day" "start" "end" "reason"]
+            additionalProperties: false
+            properties: {
+                mover: {type: "string" maxLength: 128}
+                day: {type: "string" maxLength: 8}
+                start: {type: "integer" minimum: 0 maximum: 1440}
+                end: {type: "integer" minimum: 0 maximum: 1440}
+                reason: {type: "string" maxLength: 60}
+            }
+        }
+        class: "strong"
+    }, fn(r) {
+        // ⚠️ 回调在别的时刻跑，不能假设外部变量还在 —— 一律重新取。
+        // 回调到了就停掉超时表：否则 12 秒后 ai_expired 还会跑一次，
+        // 把已经拿到的方案覆盖成「无响应」。
+        if ai_timer != nil { stop_timer(ai_timer) ai_timer = nil }
+        if !r.is_ok {
+            ai_state = 3
+            ai_plan = nil
+            ai_why = ""
+            ai_reject = "模型不可用（" + r.error + "）"
+            set_status_warn("模型不可用 · 规则建议照常可用")
+            sync_conflict()
+            return
+        }
+        let o = r.data.output
+        // 闸 1-5 在这里跑。模型说的时段先过闸，不合规则当场退回。
+        let bad = ai_verify(o)
+        if bad != nil {
+            ai_state = 3
+            ai_plan = nil
+            ai_why = o.reason
+            ai_reject = "未采纳：" + bad
+            set_status_warn("模型方案未通过校验（" + bad + "）· 已回退规则建议")
+            sync_conflict()
+            return
+        }
+        ai_plan = {
+            mover: o.mover,
+            day: substr("" + o.day, 0, 8),
+            start: o.start.to_f64(),
+            end: o.end.to_f64(),
+            reason: o.reason
+        }
+        ai_why = o.reason
+        ai_reject = ""
+        ai_state = 2
+        set_status_ok("模型给出了一个方案 · 核对无误再采纳")
+        sync_conflict()
+    })
+}
+
+
 // ---------------------------------------------------------------- 导出
 
 fn fold_line(line) {
@@ -1499,6 +1770,33 @@ fn sync_conflict() {
         ui.advice_line.set_text("重叠 " + ("" + a.minutes) + " 分钟 · 保留 " + a.keeper_summary)
         ui.advice_line2.set_text("可动 · " + a.mover_summary + "（" + a.mover_label + "）")
         ui.advice_why.set_text(a.why)
+        // ── AI 改期区：五态 ──────────────────────────────────────────
+        // ⚠️ 文案必须短：这三条 Label 在 412px 视口里宽约 350px，宿主字体
+        //    比浏览器宽约 40%，超过约 20 个汉字就会换行，把下面的两个按钮
+        //    顶出详情区。校验失败的原因另起一行放在 ai_alt_line。
+        if ai_state == 1 {
+            ui.ai_label.set_text("正在请模型给方案…")
+            ui.ai_line.set_text("")
+            ui.ai_alt_line.set_text("")
+        } else if ai_state == 2 {
+            ui.ai_label.set_text("模型方案（尚未写入）")
+            ui.ai_line.set_text(a.day + " " + pretty_time(ai_plan.start) + "-" + pretty_time(ai_plan.end))
+            ui.ai_alt_line.set_text(ai_why)
+        } else if ai_state == 3 {
+            if ai_reject == "" {
+                ui.ai_label.set_text("AI 不可用 · 规则建议照常可用")
+                ui.ai_line.set_text("")
+                ui.ai_alt_line.set_text("")
+            } else {
+                ui.ai_label.set_text("模型方案未采纳")
+                ui.ai_line.set_text(ai_reject)
+                ui.ai_alt_line.set_text("仍可用下方「应用建议」按规则改期")
+            }
+        } else {
+            ui.ai_label.set_text("AI 可给一个改期方案，但不直接改你的日历")
+            ui.ai_line.set_text("")
+            ui.ai_alt_line.set_text("")
+        }
     }
 }
 
@@ -1927,6 +2225,51 @@ fn rescan_ui() {
 }
 
 
+// ★★★ v0.5.0：把「真的把某条事件挪到某个时段」这段逻辑抽成独立函数。
+//
+// 为什么必须抽出来：v0.5.0 让模型也参与改期（评委建议 1），于是有**两条**
+// 改期路径 —— 规则引擎的 `apply_advice` 与模型的 `apply_model_plan`。
+// 如果它们各自写一遍 `events[k] = {...}`，两份代码迟早会漂移：某天修了
+// `start_utc` 的 Z 后缀只改了一处，**往返无损立刻回归**（导出再导入报
+// 「改期 N」而不是 0）。所以只有一个写入点，模型与规则共用。
+//
+// ⚠️ 三条不可放宽的写入前提（与 v0.4.1 一致，抽函数时勿删）：
+//   ① 全天事件不改成时段 —— 整天承诺降级成 1 小时会，语义已变；
+//   ② 带 RRULE 的事件不动 —— 屏幕上只有首个实例，底下是整条重复序列；
+//   ③ 原 DTSTART 的 `Z` 后缀必须保留 —— 丢了就变成「浮动时间」，
+//      与 SEQUENCE / 时区语义不符。
+fn reschedule(uid, day, slot_start, slot_end) {
+    for k in events.len() {
+        if events[k].uid != uid { continue }
+        let e = events[k]
+        if e.all_day { return 0 }
+        if e.rrule != "" { return 0 }
+        let dp = date_of(e.dtstart)
+        let dpe = date_of(e.dtend)
+        if dpe == "" { dpe = dp }
+        let sfx = ""
+        if e.start_utc { sfx = "Z" }
+        // ⚠️ Splash 对 events[k].field = x 的成员写不可靠 —— 整体换对象。
+        // ⚠️ 新建对象必须列全所有字段：读一个从没写过的键会抛
+        //    "property not found in prototype chain"，且抛错后该实例的
+        //    **后续写操作全部静默失效**。
+        events[k] = {
+            uid: e.uid, summary: e.summary,
+            dtstart: day + "T" + clock_compact(slot_start) + "00" + sfx,
+            dtend: day + "T" + clock_compact(slot_end) + "00" + sfx,
+            location: e.location, description: e.description,
+            organizer: e.organizer, status: e.status, sequence: e.sequence,
+            rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
+            dtstamp: e.dtstamp,
+            all_day: false, start_utc: e.start_utc, timezone: e.timezone,
+            start_minutes: slot_start, end_minutes: slot_end
+        }
+        return 1
+    }
+    return 0
+}
+
+
 // 一键应用建议：把建议里的「可动方」移到提议的空档
 fn apply_advice() {
     if advice.len() == 0 {
@@ -1937,42 +2280,7 @@ fn apply_advice() {
     for i in advice.len() {
         let ad = advice[i]
         if !ad.has_slot { continue }
-        // 找到 mover 并改时间（同一天，替换分钟）。
-        // ⚠️ Splash 对 events[k].field = x 的成员写不可靠 —— 整体换对象。
-        for k in events.len() {
-            if events[k].uid == ad.mover && applied_done(ad, k) == false {
-                let e = events[k]
-                // 全天事件不能改期成某个时段 —— 会把整天承诺降级成 1 小时会议，
-                // 语义直接变了。宁可少应用一条，也不动它。
-                if e.all_day { continue }
-                // 带 RRULE 的事件同理：屏幕上只有「首个实例」这一行，但底下是
-                // 一整条重复序列。挪它等于悄悄改掉用户未来所有的例会时间，
-                // 而且 COUNT/UNTIL/BYDAY 的语义还会跟着漂。不动它。
-                if e.rrule != "" { continue }
-                let dp = date_of(e.dtstart)
-                let dpe = date_of(e.dtend)
-                if dpe == "" { dpe = dp }
-                // ⚠️ 保留原时间的类型后缀：原 DTSTART 是 `...103000Z`（UTC），
-                //    重建时若丢掉 Z，读回就变成「浮动时间」，与 SEQUENCE/时区语义不符。
-                let sfx = ""
-                if e.start_utc { sfx = "Z" }
-                events[k] = {
-                    uid: e.uid, summary: e.summary,
-                    dtstart: dp + "T" + clock_compact(ad.slot_start) + "00" + sfx,
-                    dtend: dpe + "T" + clock_compact(ad.slot_end) + "00" + sfx,
-                    location: e.location, description: e.description,
-                    organizer: e.organizer, status: e.status, sequence: e.sequence,
-                    // ⚠️ 新建对象必须列全所有字段：Splash 读一个从没写过的键
-                    //    会抛 "property not found in prototype chain"，
-                    //    而且抛错后该实例的**后续写操作全部静默失效**。
-                    rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
-                    dtstamp: e.dtstamp,
-                    all_day: false, start_utc: e.start_utc, timezone: e.timezone,
-                    start_minutes: ad.slot_start, end_minutes: ad.slot_end
-                }
-                applied = applied + 1
-            }
-        }
+        applied = applied + reschedule(ad.mover, ad.day, ad.slot_start, ad.slot_end)
     }
     save()
     scan_conflicts()
@@ -7337,7 +7645,11 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     //   tools/featflow.py 的 E 段就永远读不到它（今天 10-04 正是这种情况）。
                     egg_date_l := Label{text: "" draw_text.color: c_ink
                         draw_text.text_style: theme.font_bold{font_size: 13}}
-                    Label{width: Fill text: "翻到任意一天 · 自动联网天气" draw_text.color: c_ink3
+                    // ★ v0.5.0（初赛评委建议 4）：天气坐标是写死的北京，
+                    //   界面上必须说出来 —— 否则用户会以为查的是自己所在城市。
+                    //   改同一行的文案而不是新增一行：本页再加一行会把下面的
+                    //   时间胶囊挤出 892px 视口（本项目最典型的假红来源）。
+                    Label{width: Fill text: "翻到任意一天 · 天气按北京" draw_text.color: c_ink3
                         draw_text.text_style: theme.font_regular{font_size: 10}}
                 }
                 dl_ev := Label{width: Fill text: "" draw_text.color: c_ink2
@@ -7620,7 +7932,33 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             advice_line := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
             advice_line2 := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
             advice_why := Label{width: Fill text: "" draw_text.color: c_ok draw_text.text_style: theme.font_regular{font_size: 11}}
-            Label{width: Fill text: "" draw_text.color: c_ink3}
+            // ── AI 改期区（v0.5.0）────────────────────────────────────
+            // ⚠️ 为什么挂在「详情」里而不是冲突条上：冲突条 height 写死 44，
+            //    右侧三个按钮已吃掉 ~209px，再加第四个会把左侧状态文字挤没
+            //    （「单行 Label 多 6 个字就换行」是本项目踩过两次的坑）。
+            //    详情区是 height: Fit，多几行说明不会挤掉任何常驻控件。
+            // ⚠️ 两个按钮都必须**静态声明**：on_render 里建的按钮重建后
+            //    on_click 不重绑，点了没反应（本项目踩过三次）。
+            ai_label := Label{width: Fill text: "AI 可给一个改期方案，但不直接改你的日历"
+                draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
+            ai_line := Label{width: Fill text: "" draw_text.color: c_ink2
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+            ai_alt_line := Label{width: Fill text: "" draw_text.color: c_accent
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+            RoundedView{width: Fill height: 28.0 flow: Right spacing: 8 draw_bg +: {color: c_warn_s}
+                ButtonFlat{text: "请模型给方案" height: 26.0 padding: Inset{left: 12 right: 12}
+                    on_click: || ask_model()
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3}}
+                ButtonFlat{text: "采纳并改期" height: 26.0 padding: Inset{left: 12 right: 12}
+                    on_click: || apply_model_plan()
+                    draw_bg +: {border_radius: 6.0 color: c_accent color_hover: #xa3431a color_down: #xa3431a
+                        color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff
+                        color_focus: #xffffff color_disabled: #xf0d9c9}}
+            }
         }
     }
 
@@ -7654,7 +7992,9 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "© Google LLC · Noto Animated Emoji · CC BY 4.0"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
-            Label{width: Fill text: "本应用申请 storage + net：日历数据全部留在本机；net 仅用于读取 Open-Meteo 天气（只读，不发送任何事件数据）。"
+            Label{width: Fill text: "本应用申请 storage + net + model：日历数据全部留在本机；net 仅用于读取 Open-Meteo 天气（只读，不发送任何事件数据）。"
+                draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            Label{width: Fill text: "model 只在你点「请模型给方案」时，把这一条冲突的标题与时长发给你自己配置的 AI 提供方；改期要你点「采纳」才写入，判定与校验都在本机。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             // ── 共享范围（2026-10-01 新增）──────────────────────────────
             // ⚠️ 必须把边界写在**界面上**，不能只写 README：真正的实时共享要有后端，

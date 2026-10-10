@@ -2,7 +2,8 @@
   "agent": null,
   "capabilities": [
     "storage",
-    "net"
+    "net",
+    "model"
   ],
   "compute": {
     "instruction_budget": null,
@@ -10,23 +11,21 @@
   },
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "0c2a7707919b3b540a30856c9077a378013aa966b58eeac69a74cca870b78b2f",
+    "bundle_blake3": "05c9de8b2fdd7b39420ce9ae6a5d0d14b39c21d19f779434360d3d308fef3215",
     "signature": {
       "key_id": "OMA",
-      "value": "9d41fdc011863110867460bd17f830dda780adfa39e05abdc4bb94f66f9de44c79127d2c42f4af40c15e9923f2dbf7338342f430cf5e80b33033f6719514230f"
+      "value": "b64125073e2d5af670dc42ef614a3ff55f9656cb0112228fb9b5eae31da95affffdb1ff1a5b19f08903abbb4aed23f5c1c95ab85d8c5aa34c8f3f71bb6793c08"
     }
   },
   "name": "OctoSense 日历",
   "network": {
     "hosts": [
-      "api.open-meteo.com",
-      "geocoding-api.open-meteo.com",
-      "archive-api.open-meteo.com"
+      "api.open-meteo.com"
     ]
   },
   "schema": 1,
   "storage": {
     "max_bytes": null
   },
-  "version": "0.4.1"
+  "version": "0.5.0"
 }

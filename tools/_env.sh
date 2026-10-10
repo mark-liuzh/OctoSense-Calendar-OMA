@@ -107,8 +107,19 @@ static_gate() {
       rc=1
     fi
   done
+  # ★ 2026-10-10（v0.5.0）：AI 改期层的七道闸判定夹具。
+  #   为什么它属于 static_gate：`model.complete` 的**成功路径**本机验不了
+  #   （card-host 不注册该服务，真机又要求先提交进商店），所以闸门逻辑本身
+  #   就是唯一能在本机持续验的部分。它是纯 Python、秒级、不起宿主。
+  #   `--sync` 额外把 13 条拒绝理由与 bundle 的 ai_verify 逐字比对 ——
+  #   夹具是复刻的，漂了就等于在验一份和实现不同的规则（假绿）。
+  if ! out=$("$PY" "$ROOT/tools/test_ai_gates.py" --sync "$f" 2>&1); then
+    echo "FATAL: AI 闸门夹具 tools/test_ai_gates.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
   [ "$rc" = "0" ] || exit 1
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls 全过"
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates 全过"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
