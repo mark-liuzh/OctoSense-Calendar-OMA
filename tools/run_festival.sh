@@ -172,10 +172,25 @@ eqkind() {
   local got; got=$(val DOTKIND "$3")
   if [ "$got" = "$2" ]; then ok "$1 = ${2:-（无）}"; else bad "$1 — 期望 ${2:-（无）}，实际 ${got:-（无）}"; fi
 }
-# 断言：「班」字的颜色语义等于 $2（空串 = 不该有「班」字）
+# 断言：所有「班」字的颜色语义序列等于 $2（空串 = 不该有「班」字）
+# ⚠️ 2026-10-09（P2-5）：$2 现在是**逗号分隔的序列**（e.g. "EVENT,EVENT"），
+#   因为 dotcolor 改成对**每一个**「班」都取色 —— 原来只判第1 个，
+#   某月有多个调休日时后面的颜色错了也测不出来。
+#   仍写"EVENT"（不带逗号）也能工作：那表示「恰好一个，且是 EVENT」。
 eqban() {
-  local got; got=$(val BANKIND "$3")
-  if [ "$got" = "$2" ]; then ok "$1 = ${2:-（无）}"; else bad "$1 — 期望 ${2:-（无）}，实际 $got"; fi
+  local got want
+  got=$(val BANKIND "$3")
+  # 单值期望 → 展开成「恰好一个」的判定，保持旧写法可用
+  case "$2" in
+    *,*) want="$2" ;;
+    "")   want="" ;;
+    *)   want="$2" ;;
+  esac
+  if [ "$got" = "$want" ]; then ok "$1 = ${want:-（无）}"
+  else
+    #红了就把逐个坐标的结果一起打出来，省得再跑一次探针
+    bad "$1 — 期望 ${want:-（无）}，实际 ${got:-（无）}  [$(val BAN_KIND_DETAIL "$3")]"
+  fi
 }
 
 echo "=== [1/9] 启动宿主 ==="

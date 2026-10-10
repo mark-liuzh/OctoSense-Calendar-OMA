@@ -1014,11 +1014,21 @@ def main():
         print("DOTCOLORS=" + ",".join(cols))
         print("DOTXY=" + " ".join("%d,%d" % (r[0], r[1]) for r in m["日历格子点"]))
         print("BANXY=" + " ".join("%d,%d" % (r[0], r[1]) for r in m["班"]))
+        # ⚠️⚠️ 2026-10-09（v0.5.0 P2-5）：原来只判**第一个**「班」
+        #   （bk = dot_kinds(..., m["班"][0], sc)）。而holiday_marks 会收集
+        #   **全部** text=="班" 的节点 ⇒ BAN 的**个数**是全的、**颜色**只判第1 个。
+        #   后果：某月有多个调休日时（比如 10 月前后各有一个），第 2 个以后
+        #   画错颜色不会被告警测出来 —— 数量对得上，颜色错了却全绿。
+        #   现在对**每一个**都取色，输出逗号分隔序列；
+        #   同时给出 BAN_KIND_DETAIL（含坐标），红了能直接定位是哪一个。
         if m["班"]:
-            bk = dot_kinds(w, ch, buf, m["班"][0], sc)
-            print("BANKIND=" + bk)
+            bks = [dot_kinds(w, ch, buf, r, sc) for r in m["班"]]
+            print("BANKIND=" + ",".join(bks))
+            print("BAN_KIND_DETAIL=" + " ".join(
+                "%d,%d=%s" % (r[0], r[1], k) for r, k in zip(m["班"], bks)))
         else:
             print("BANKIND=")
+            print("BAN_KIND_DETAIL=")
 
     else:
         print(__doc__)
