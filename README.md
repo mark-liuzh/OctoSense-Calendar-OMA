@@ -633,7 +633,7 @@ fill = color.mix(color_focus, focus)
 | 发布基准 | GitHub [`7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b)（tag `v0.5.0`；2026-10-10）· digest `05c9de8b…` / signature `b6412507…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.5.0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.0)（id 408621775）下载件解包**三处逐字节一致**；zip sha256 本地与远端**实测一致** |
 | 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` 全量回归 **21/21 PASS**（宿主错误 0）· **往返无损 0/0/4** |
-| 提交 issue | [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 提交 issue | [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ v0.5.0 权威值（2026-10-10）
 
