@@ -39,7 +39,11 @@ BUILTINS = {
     # 图形 / 资源 / 主题
     "http_resource", "theme",
     # 定时器 / 生命周期
-    "start_timeout", "start_interval",
+    # ⚠️ stop_timer 曾漏在这里（2026-10-10 v0.5.0 补）：AI 层用 start_timeout
+    # 做超时兜底、回调里用 stop_timer 收表，门禁把 stop_timer 报成
+    # 「调用了但从未定义」。它和上面两个是同一族，官方 SCRIPT-API
+    # §Timers and time 一并列出，不是笔误。
+    "start_timeout", "start_interval", "stop_timer",
     # 其他宿主内建（实测出现在本项目的调用点）
     "size_of", "color", "vec2", "vec3", "vec4", "mat4", "ok", "err",
     "json", "fn", "regex", "html", "shader",
