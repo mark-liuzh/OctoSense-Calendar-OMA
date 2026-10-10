@@ -158,8 +158,22 @@ com.oma.octosense.calendar 0.5.1 — PASSED
 hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
 ```
 
-⚠️ 五处一致性（仓库 · GitHub commit · Release 下载件 · `hub check` · zip sha256）
-**在本文件写下时只完成了前两处**；Release 资产与 zip sha256 待发布后回填核对。
+**Release**：[`v0.5.1`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.1)（id 409003607）
+
+**五处一致性**（v0.4.1 曾因 digest 撕裂返工三次，故逐处验过）：
+
+| # | 位置 | 结果 |
+|---|---|---|
+| 1 | 仓库 `bundle/manifest.json` | digest `2d87d36d…` / signature `12146f93…` |
+| 2 | 工作区 `bundle/` | 同上 |
+| 3 | GitHub `origin/main`（= `d47e64d`） | 同上（`git show origin/main:bundle/manifest.json` 实测） |
+| 4 | 从 Release 下载的 zip 解包 → `hub check` | **PASSED**，无警告 |
+| 5 | 仓库 `bundle/` vs zip 解包件 `diff -r` | **无差异**；zip sha256 本地与远端下载件**实测一致** |
+
+Release 资产：`octosense-calendar-0.5.1.zip`（2,648,361 bytes · 22 files）
+sha256 `63eeb48b3907e80c641e0deda1c182a2cc0cf8cb676c95764c832f2999fa9018`
+
+**App Hub 提交 issue**：[#200](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200)
 
 ## 七、与 v0.5.0 的关系
 

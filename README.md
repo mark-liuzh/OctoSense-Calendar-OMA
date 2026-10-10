@@ -654,10 +654,10 @@ fill = color.mix(color_focus, focus)
 | 版本 | `0.5.1`（天气可按城市取数：月历右上角选城市，**不做自动定位**；详见下方「天气为什么是选城市而不是自动定位」） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model`（**不含** `location`） |
-| 发布基准 | GitHub tag [`v0.5.1`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.1)（2026-10-10）· digest `2d87d36d80d7e188…` / signature `12146f93c520a587…` |
+| 发布基准 | GitHub Release [`v0.5.1`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.1)（id 409003607；tag = `main` = `d47e64d`；2026-10-10）· digest `2d87d36d80d7e188…` / signature `12146f93c520a587…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-10）。对照组不带 key → `refused` |
 | 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` **21/21 PASS**（宿主错误 0）· `verify_city.sh` **12/12**（宿主错误 0）· `shots.sh` **SHOTS PASS**（首次全绿）· **往返无损 0/0/4** |
-| 提交 issue | [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 提交 issue | [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ v0.5.1 权威值（2026-10-10）
 
