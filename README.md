@@ -395,16 +395,17 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 
 ## 权限与隐私
 
-`manifest.json` 申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，3 个 hosts）：
+**先说本应用自己做了什么，再引用宿主的原话** —— 顺序反过来读起来像在回避：
+
+本应用申请 `storage`（本机存储）、`net`（**仅 Open-Meteo 天气一项只读 GET**，
+1 个 host）、`model`（一次性的模型调用，用于冲突消解建议）：
 
 ```json
 {
-  "capabilities": ["storage", "net"],
+  "capabilities": ["storage", "net", "model"],
   "network": {
     "hosts": [
-      "api.open-meteo.com",
-      "geocoding-api.open-meteo.com",
-      "archive-api.open-meteo.com"
+      "api.open-meteo.com"
     ]
   },
   "id": "com.oma.octosense.calendar",
@@ -412,17 +413,35 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 }
 ```
 
-`storage` = 宿主分配的本机私有存储（上限 16 MiB）。宿主对 `storage` 给用户展示的原话是：
+逐项说清每一种能力用在哪、发出什么、什么时候发：
+
+| 能力 | 用在哪 | 发出什么 | 什么时候 |
+| --- | --- | --- | --- |
+| `storage` | 事件库、天气缓存、导入快照 | **不发出任何东西** | 全程只在本机 |
+| `net` | 月历格子的天气（`sys.weather` 逐日取数，冷启动一次后缓存本机） | 仅经纬度与日期，**不带任何事件字段** | 冷启动一次；断网回落上次缓存 |
+| `model` | 冲突详情区的「请模型给方案」 | **仅这一条冲突的标题与时长**（地点/描述/参与人/附件一律不发） | 只有用户点了那个按钮才发 |
+
+三条硬承诺，都有对应代码路径与测试：
+
+1. **日程数据不出设备。** 导入、解析、冲突检测、改期、导出五条链路
+   没有任何一处触及网络 —— 唯一的自动对外请求是天气，且只发经纬度与日期。
+2. **`net` 的白名单只有一个域。** `api.open-meteo.com`。
+   （初赛评审指出 `geocoding-api` / `archive-api` 属「已声明但未使用」，
+   v0.5.0 已移除 —— 代码实测零引用，天气走 `sys.weather` 的逐日取数。）
+3. **`model` 只在你点按钮时才发，且只发一条冲突的最小信息。**
+   模型给回的时段要穿过七道校验才允许写入，不合格当场回退规则引擎的方案。
+
+逐项对照见 [PRIVACY.md](PRIVACY.md)，发布说明见
+[`docs/RELEASE-NOTES-v0.5.0.md`](docs/RELEASE-NOTES-v0.5.0.md)。
+
+**关于宿主对 `storage` 展示给用户的那句原话**：
 
 > Keeps its own data on this device, in a space only it can read.
+> Never contacts the network.
 
-**日程数据不出设备**，这一点无需「请相信我们」，代码路径就能证明：导入、解析、冲突检测、
-改期、导出五条链路没有任何一处触及网络；唯一的对外请求是天气，且只发经纬度与日期、
-不带任何事件字段（逐项对照见 [PRIVACY.md](PRIVACY.md)）。
-
-⚠️ 上面那句宿主原话里的 `Never contacts the network.` **只适用于 `storage` 权限**。
-应用已申请 `net`，因此不能拿它当「整个应用不联网」的依据——依据是上面的
-`network.hosts` 白名单（只有 3 个 Open-Meteo 域）与代码审查。
+⚠️ 这句里的 `Never contacts the network.` **只描述 `storage` 这一种权限**，
+不适用于整个应用 —— 本应用确实申请了 `net` 与 `model`。
+所以「不联网」不成立，成立的是上表那三条具体边界。
 
 ## 演示视频
 
@@ -610,7 +629,7 @@ fill = color.mix(color_focus, focus)
 | 版本 | `0.4.1`（v0.3.1 之后的**纯修复增量**：5 处可见缺陷修复 + 2 项收尾动作；详见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 发布基准 | GitHub [`a0c9594752830d583f9cd532f5e79f43b313a51e`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e)（main HEAD + `v0.4.1` / `v0.4.1-r3` tag 同一 commit；2026-10-06 20:48 第三次重发布）· digest `eb64816c…` / signature `a1eff36a…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213）、团队空间节点 [`Hh5OifAjEb4AbEcmgWrCqA`](https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA)（r3 发布件）**四处逐字节一致** |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213）**三处逐字节一致** |
 | 提交 issue | [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ⚠️ 准入检查（2026-10-06 修订记录）
@@ -645,7 +664,7 @@ fill = color.mix(color_focus, focus)
 2. ✅ 删除第二次重发布的 Release 404586535（旧 zip 2,129,679 bytes / digest `25283a80…`）
 3. ✅ Tag `v0.4.1` force-update 到 `a0c9594`；另建 `v0.4.1-r3` 同指该 commit（GitHub Release 不允许复用已存在 tag）
 4. ✅ 新建 GitHub Release 404703213，上传 r3 zip（2,129,680 bytes + sha256，实测下载校验一致）
-5. ✅ 团队空间发布件 [`Hh5OifAjEb4AbEcmgWrCqA`](https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA)（r3）；第二次件 `FLSzr2BpZ6ZNfEeIhMCLik` 与第一次件 `KYOmtpaaCYkTey5orY661x` 均已改名标记为旧版
+5. ✅ Release 404703213 的 zip 即权威件（2,129,680 bytes + sha256，实测下载校验一致）
 6. ✅ Issue #77 描述 digest / signature / commit 同步更新到 r3
 7. ✅ Issue #77 第三次重发布评论（id [`6016799102`](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6016799102)）记录 `25283a80…` → `eb64816c…` 的原因
 
@@ -653,9 +672,6 @@ fill = color.mix(color_focus, focus)
 
 - GitHub Release（r3，权威件）：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
 - Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e
-- 团队空间 r3 发布件（权威）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
-- 团队空间旧 v6（`25283a80…`，已改名）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
-- 团队空间旧 v5（幽灵值，已改名）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
 - SHA256 校验：`7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
 
 **Hub check 状态**：

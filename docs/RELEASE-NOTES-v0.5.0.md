@@ -1,9 +1,9 @@
 # OctoSense 日历 v0.5.0
 
-**2026 GOSIM Agentic App Hackathon · 复赛版本 · 队伍 OMA**（成员 `mark-liuzh`、`ody-cai`）
+**2026 GOSIM Agentic App Hackathon · 队伍 OMA**（成员 `mark-liuzh`、`ody-cai`）
 
-> v0.5.0 是**复赛版本**：按初赛评委（ZhangHanDong，issue #77 comment）四条建议逐条处置。
-> 其中第1 条是主要失分点 —— **接入了 `model.complete`，让模型真正参与改期**；
+> 按初赛评委（ZhangHanDong，issue #77 comment）四条建议逐条处置。
+> 第1 条是主要失分点 —— **接入了 `model.complete`，让模型真正参与改期**；
 > 其余三条是权限口径与界面标注的收紧。
 >
 > 一句话概括这个版本的取向：**模型参与决策，但决定权不在模型手里。**

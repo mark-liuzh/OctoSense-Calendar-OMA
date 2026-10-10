@@ -341,8 +341,9 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 
 - GitHub Release（r3，权威件）：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
 - Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e
-- 团队空间 r3 发布件（权威）：https://www.workbuddy.cn/space/d/Hh5OifAjEb4AbEcmgWrCqA
-- 团队空间旧 v6（`25283a80…`）：https://www.workbuddy.cn/space/d/FLSzr2BpZ6ZNfEeIhMCLik
-- 团队空间旧 v5（幽灵值）：https://www.workbuddy.cn/space/d/KYOmtpaaCYkTey5orY661x
+- SHA256 校验：`7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
+
+> 另有两份团队内部同步件（v6 / v5）已改名标记为旧版。它们不在公开渠道，
+> 不在此列出位置 —— 权威件就是上面那个 GitHub Release。
 
 完整更新同时见 [`README.md`](../README.md)「### ⚠️ 准入检查」一节。
