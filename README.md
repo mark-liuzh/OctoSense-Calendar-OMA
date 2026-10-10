@@ -705,10 +705,9 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 
 详见 [`docs/RELEASE-NOTES-v0.5.1.md`](docs/RELEASE-NOTES-v0.5.1.md)。
 
-### v0.5.0（初赛提交版本 · 历史记录，**已作废**）
+### v0.5.0（历史记录，**已作废**）
 
-> ⚠️ 本节所有 digest / signature 均**已作废**，当前发布基准是上方 v0.5.1。
-> 保留原因：初赛 issue #198 的提交基准在此，复赛评审会回溯。
+> ⚠️ 本节所有 digest / signature 均**已作废**，当前发布基准见上方「当前权威值」。
 
 | 字段 | 值 |
 | --- | --- |
@@ -734,11 +733,11 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 （`tools/test_ai_gates.py`，38 条用例；`--sync` 会把13 条拒绝理由与
 `ai_verify` 逐字比对，避免夹具漂移成假绿）。
 
-### v0.4.1（初赛提交版本 · 历史记录，**已作废**）
+### v0.4.1（历史记录，**已作废**）
 
-> ⚠️ 本节 digest `eb64816c…` 是**初赛提交 #77 的基准**，已不再是当前发布基准（见上方 v0.5.1）。
-> 本节完整保留那次返工过程是有意的：manifest 里的digest 曾与 bundle 实算不一致，
-> 靠「逐处实算 + 对解包件跑 hub check」才查出来。**留在这里是为了让评审看到这件事发生过、以及怎么被发现的。**
+> ⚠️ 本节 digest `eb64816c…` **已作废**，当前发布基准见上方「当前权威值」。
+> 本节保留了那次返工的过程记录：manifest 里的 digest 曾与 bundle 实算不一致，
+> 靠「逐处实算 + 对解包件跑 `hub check`」才查出来。
 > 逐处核对结论见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)。
 
 **修订链**：
