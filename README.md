@@ -418,22 +418,46 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 
 | 能力 | 用在哪 | 发出什么 | 什么时候 |
 | --- | --- | --- | --- |
-| `storage` | 事件库、天气缓存、导入快照 | **不发出任何东西** | 全程只在本机 |
-| `net` | 月历格子的天气（`sys.weather` 逐日取数，冷启动一次后缓存本机） | 仅经纬度与日期，**不带任何事件字段** | 冷启动一次；断网回落上次缓存 |
+| `storage` | 事件库、天气缓存、导入快照、选定的天气城市 | **不发出任何东西** | 全程只在本机 |
+| `net` | 月历格子的天气（`sys.weather` 逐日取数，冷启动一次后缓存本机）；把用户输入的城市名换成经纬度（`sys.geocodenum`） | 天气：经纬度与日期；换城市：**仅用户输入的城市名**。**都不带任何事件字段** | 天气冷启动一次；换城市只在用户点「应用」时；断网回落上次缓存 |
 | `model` | 冲突详情区的「请模型给方案」 | **仅这一条冲突的标题与时长**（地点/描述/参与人/附件一律不发） | 只有用户点了那个按钮才发 |
 
 三条硬承诺，都有对应代码路径与测试：
 
 1. **日程数据不出设备。** 导入、解析、冲突检测、改期、导出五条链路
-   没有任何一处触及网络 —— 唯一的自动对外请求是天气，且只发经纬度与日期。
-2. **`net` 的白名单只有一个域。** `api.open-meteo.com`。
-   （初赛评审指出 `geocoding-api` / `archive-api` 属「已声明但未使用」，
-   v0.5.0 已移除 —— 代码实测零引用，天气走 `sys.weather` 的逐日取数。）
+   没有任何一处触及网络 —— 自动的对外请求只有天气，且只发经纬度与日期。
+2. **`net` 的白名单只有两个域，都是 Open-Meteo 自家**：
+   `api.open-meteo.com`（天气）与 `geocoding-api.open-meteo.com`（城市名 → 坐标）。
+   第三个域 `archive-api.open-meteo.com` 早先声明了但代码实测零引用，v0.5.0 起不再声明。
+   ⚠️ 清单里**没有** `location` —— 应用不申请定位权限、不做任何自动定位。
 3. **`model` 只在你点按钮时才发，且只发一条冲突的最小信息。**
    模型给回的时段要穿过七道校验才允许写入，不合格当场回退规则引擎的方案。
 
-逐项对照见 [PRIVACY.md](PRIVACY.md)，发布说明见
-[`docs/RELEASE-NOTES-v0.5.0.md`](docs/RELEASE-NOTES-v0.5.0.md)。
+### 天气为什么是「选城市」而不是「自动定位」
+
+初赛评委问的是「天气是不是只查了北京」。答案：**v0.5.1 起可以选城市了，
+但仍然不做自动定位**——这是宿主能力决定的，不是偷懒。
+
+宿主提供的定位接口 `sys.gps` 在**桌面宿主上恒定返回「无定位」**：
+按宿主自己的源码注释，它「Fed by the Android LocationListener through JNI」
+（`splash.rs` 的 `sys.gps` 实现），**只有 Android 接了定位服务**，
+macOS / Windows 上没有 provider。因此在桌面端申请 `location` 权限
+只会让商店弹出一句「使用你的位置」，却永远拿不到数据。
+
+所以应用选了另一条路：**月历右上角的城市按钮 → 输入城市名 → 换坐标 → 按该坐标取天气**。
+默认仍是北京，顶栏按钮显示当前城市名，不装作是自动定位。
+
+![天气城市选择](bundle/screenshots/01b-city.png)
+
+这条取舍在官方文档里也有依据——`ui-profile-l0.md` 写着
+「a coordinate a card carries is a place the device is not」：
+卡片自带一个坐标并不是「设备在哪」，如实标注才是诚实的做法。
+
+**这一条能站住，是因为它真的能用**（`tools/verify_city.sh` 实测，12 项断言全过）：
+输入「深圳」→ 落盘 `lat=22.54554 lon=114.0683` → 37 行天气缓存清空后按新坐标回填，
+宿主运行错误 0。
+
+逐项对照见 [PRIVACY.md](PRIVACY.md)。
 
 **关于宿主对 `storage` 展示给用户的那句原话**：
 
@@ -627,9 +651,9 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.0`（按初赛评委四条建议处置：接入 `model.complete` 让模型参与改期 + 权限口径收紧；详见 [`docs/RELEASE-NOTES-v0.5.0.md`](docs/RELEASE-NOTES-v0.5.0.md)） |
+| 版本 | `0.5.1`（天气可按城市取数：月历右上角选城市，**不做自动定位**；详见下方「天气为什么是选城市而不是自动定位」） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 能力 | `storage` + `net`（1 个 host：`api.open-meteo.com`）+ `model` |
+| 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model`（**不含** `location`） |
 | 发布基准 | GitHub [`7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b)（tag `v0.5.0`；2026-10-10）· digest `05c9de8b…` / signature `b6412507…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.5.0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.0)（id 408621775）下载件解包**三处逐字节一致**；zip sha256 本地与远端**实测一致** |
 | 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` 全量回归 **21/21 PASS**（宿主错误 0）· **往返无损 0/0/4** |

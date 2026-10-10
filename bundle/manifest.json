@@ -11,7 +11,7 @@
   },
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "05c9de8b2fdd7b39420ce9ae6a5d0d14b39c21d19f779434360d3d308fef3215",
+    "bundle_blake3": "1268f4ad1a04e6902df15e5771a9c1ade48f0ef0c5c0b03bf8cdde29137c02b2",
     "signature": {
       "key_id": "OMA",
       "value": "b64125073e2d5af670dc42ef614a3ff55f9656cb0112228fb9b5eae31da95affffdb1ff1a5b19f08903abbb4aed23f5c1c95ab85d8c5aa34c8f3f71bb6793c08"
@@ -20,12 +20,13 @@
   "name": "OctoSense 日历",
   "network": {
     "hosts": [
-      "api.open-meteo.com"
+      "api.open-meteo.com",
+      "geocoding-api.open-meteo.com"
     ]
   },
   "schema": 1,
   "storage": {
     "max_bytes": null
   },
-  "version": "0.5.0"
+  "version": "0.5.1"
 }

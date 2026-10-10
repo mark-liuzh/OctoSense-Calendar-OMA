@@ -566,11 +566,56 @@ let WX_KEEP_DAYS = 90
 //    platform/script/std/src/gate.rs 的 url_host）。
 //   ⚠️ sys.fetch **不在**宿主的 body_binds_live_data 白名单 → 数据到了宿主不会自动
 //      重算，所以必须自己起多个 start_timeout 反复读 + refresh_all()（见 wx_past_fetch）。
-let WX_PAST_URL = "https://api.open-meteo.com/v1/forecast"
-    + "?latitude=39.9042&longitude=116.4074"
-    + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-    + "&past_days=30&forecast_days=7&timezone=auto&format=csv"
-let wx_past_done = false          // 历史已并入（历史不会变，一次足够）
+// ★ v0.5.0：天气坐标从写死改为「可变 + 默认北京」。
+//   为什么可变：初赛评委建议 4 问的是「天气是不是只查了北京」。宿主在桌面端
+//   **没有自动定位可用**（sys.gps 恒 -9999 —— 它唯一的写入点是 Android JNI，
+//   见 splash.rs:3762 注释 "Fed by the Android LocationListener through JNI"），
+//   所以「自动定位」这条路在 OctoSense 桌面宿主上走不通。
+//   可行且诚实的是**让用户自己选城市**：输入城市名 → sys.geocodenum 换成经纬度
+//   → sys.weather 按该坐标取数。实测 sys.geocodenum("Shenzhen","lat") = 22.54554。
+//   默认仍是北京，且界面上如实写出当前城市名（见 wx_city_label）。
+let WX_CITY_FILE = "wx_city.json"  // {name, lat, lon} —— 用户选定的天气城市
+let wx_lat = 39.9042               // 天气纬度（默认北京）
+let wx_lon = 116.4074              // 天气经度（默认北京）
+let wx_city = "北京"         // 当前城市名（显示在月历右上角）
+let wx_past_done = false    // 历史已并入（历史不会变，一次足够）
+
+// ⚠️ 城市名 → 坐标的 `wx_geocode()` **不在这里定义** —— 它连同 apply_city /
+//   retry_city 一起放在文件后段（换天气城市那一节），那里才有完整的实测记录。
+//   ⚠️⚠️ 别把它挪回文件顶部：**顶层 `fn` 与 `let` 一样是顺序注册的**，
+//   而 Splash 的建树阶段只认「调用点之前已定义」的函数 —— 挪到前面反而会让
+//   后面的调用变成前向引用（tools/deps.py 会报 FATAL）。
+
+// 历史天气的 URL 现在依赖可变坐标，所以从常量降级成**函数**。
+// ⚠️ 原来是 `let WX_PAST_URL = …`（顶层常量），坐标写死；
+//   坐标可变后每次都要重新拼，否则换城市拿到的还是北京的过去天气。
+fn wx_past_url() {
+    return "https://api.open-meteo.com/v1/forecast"
+        + "?latitude=" + ("" + wx_lat)
+        + "&longitude=" + ("" + wx_lon)
+        + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+        + "&past_days=30&forecast_days=7&timezone=auto&format=csv"
+}
+
+// 读回用户选定的城市。存的是 {name, lat, lon}；任何一项缺失/损坏都回落北京。
+fn wx_city_load() {
+    if !fs.exists(WX_CITY_FILE) { return }
+    let v = fs.read(WX_CITY_FILE).parse_json()
+    if v == nil { return }
+    let n = "" + (v.name or "")
+    // ⚠️ parse_json 解析出的数字**已经是 number**，不要再 .to_f64()
+    //   （宿主报 "method to_f64 not found on number"，本项目已踩两次：
+    //   一次在 wx_live_url、一次在这里）。`or 0.0` 只处理字段缺失。
+    let la = v.lat or 0.0
+    let lo = v.lon or 0.0
+    // 纬度 [-90,90]、经度 [-180,180]，且排除 0/0（那是「解析失败」的常见残留）
+    if la < -90.0 || la > 90.0 { return }
+    if lo < -180.0 || lo > 180.0 { return }
+    if la == 0.0 && lo == 0.0 { return }
+    wx_lat = la
+    wx_lon = lo
+    if n != "" { wx_city = n }
+}
 
 // ── 假期倒计时（2026-10-04 v0.4.0）───────────────────────────────
 // 用户原话：「像倒计时为什么不放在待办里面？提示还有多少天就可以放假了。
@@ -2103,6 +2148,12 @@ fn refresh_all() {
     ui.cp_r2.set_visible(cap_slot_visible(2))
     // ── 共享范围 ──
     ui.share_line.set_text(share_label())
+    // ── 天气城市（v0.5.0）──
+    // ⚠️ 顶栏那个按钮只有 60px（见它的定义处注释：92px 就已经把翻月的 `>`
+    //   从 26px 压成 12px 了）。长城市名必须截断，否则文字挤出按钮边界。
+    //   面板标题「天气按城市取 · 不做自动定位」承担了语义说明。
+    ui.wx_city_btn.set_text(city_label())
+    ui.city_msg.set_text(wx_city_msg)
     sync_conflict()
     sync_confirm()
 }
@@ -2132,6 +2183,10 @@ fn load() {
     // ★ 2026-10-01：先定「关注日」= 今天，再读旁路存储（待办/心情/目标/胶囊/共享）。
     init_focus()
     load_aux()
+    // ★ v0.5.0：读回用户选定的天气城市（没有文件就是默认北京）。
+    //   必须在 wx_live_load_cache / wx_live_fetch **之前** —— 那两个按当前坐标取数，
+    //   坐标还没读回来就会先用北京的缓存上屏。
+    wx_city_load()
     sync_panels()
     ui.confirm_bar.set_visible(false)
     ui.conflict_bar.set_visible(false)
@@ -3181,10 +3236,19 @@ fn sync_panels() {
     //   ⚠️ 这三行是「纠正状态」，不是「渲染状态」；后面三行 set_visible 才读它们。
     if new_open { about_open = false }
     if new_open { import_open = false }
+    if new_open { wx_city_open = false }
     if import_open { about_open = false }
+    if import_open { wx_city_open = false }
+    // ★ v0.5.0：城市面板也参与互斥，且优先级最低（它最矮、最好让）。
+    if wx_city_open { new_open = false }
+    if wx_city_open { import_open = false }
+    if wx_city_open { about_open = false }
     // 「有面板开着」= 页面处于模态态。下面所有让位规则都只依赖这一个布尔量。
-    let panel_on = about_open || import_open || new_open
+    let panel_on = about_open || import_open || new_open || wx_city_open
     ui.about_panel.set_visible(about_open)
+    // ★ v0.5.0：城市面板同样只在「日程」分区出现，且与月历互斥 ——
+    //   选城市时正在看的是月历天气，不需要让位给别的。
+    ui.city_panel.set_visible(wx_city_open && tab == 0)
     // ★ 2026-10-01：导入 / 新建面板**只属于「日程」分区**。切到别的分区时把它们收起，
     //   但**不改** new_open / import_open 状态 —— 切回来内容还在。
     //   （若在这里强行置 false，用户在新建面板里敲了一半的标题，会因为点了一下
@@ -3202,7 +3266,11 @@ fn sync_panels() {
     // ── 「日程」分区 ──
     // 月历：关于页让位（它很长），导入页也让位（导入流程要一整屏）；
     //   **新建日程不让位** —— 用户正是在看着月历挑日期。
-    let cal_on = tab == 0 && !about_open && !import_open
+    // ★ v0.5.0：城市面板**也让位**。理由是它就锚在月历顶栏那个按钮上，
+    //   不让位等于让面板叠在月历下面 —— 实测最坏组合月历底端已到 862px，
+    //   再叠一个面板必然超出 892px 视口。让位后面板占的就是 import_panel 同一块空间，
+    //   竖向几何与「导入」打开时完全一致。
+    let cal_on = tab == 0 && !about_open && !import_open && !wx_city_open
     // 工具条（导入/导出/计数）是日程的数据出入口，只在日程分区出现。
     ui.tools.set_visible(tab == 0)
     ui.cal_box.set_visible(cal_on)
@@ -3578,6 +3646,19 @@ fn group_by_day(list) {
 let about_open = false     // 关于面板
 let import_open = false    // 导入面板（输入框只在这里出现）
 let more_open = false      // 冲突细节展开
+// ── 天气城市（v0.5.0）────────────────────────────────────────────────
+// ⚠️⚠️ 这两个必须声明在这里（**load() 之前**），不能挪到 apply_city 附近。
+//   Splash 顶层语句每次 eval 都顺序执行 ⇒ 顶层 `let x = 默认值` 是**每次重算都
+//   重新赋值**，不是只初始化一次。声明若排在 load() 之后，用户刚点开的城市面板
+//   会在下一次 re-eval（sys.weather 取到数就会触发）时被无声重置成 false。
+//   实测症状极具误导性：面板「自己关了」，一度被误判成 apply_city 走了成功路径。
+let wx_city_open = false   // 城市选择面板是否展开
+// wx_city_msg 存的是**面向用户的一句话**，不是原始错误码/数值 ——
+// 「查询中」「没查到」「请输入」「太长」四态必须让用户能分辨。
+let wx_city_msg = ""
+// wx_city_pending = 正在等重试的城市名（"" = 没有待决的查询）。
+// 存在是因为 sys.geocodenum 首次必然 -9999，要靠 start_timeout 再试一次。
+let wx_city_pending = ""
 // ── 新建日程（2026-09-30 用户要求：「为什么日期不能点开」「我想在某一天写我要做什么」）──
 let new_open = false       // 新建日程面板
 let new_repeat = 0         // 重复档位：0 不重复 / 1 每天 / 2 每周 / 3 每月 / 4 每年
@@ -3687,6 +3768,31 @@ fn toggle_import() {
     //   导入流程因此比改前更宽松：顶栏 + 工具条 + 面板 204 + 确认条 54 + 状态 52 ≈ 400px。
     sync_panels()
     refresh_all()
+}
+
+
+// ★ v0.5.0：城市选择面板的开关。与导入/新建面板**互斥** —— 三个面板抢同一块竖向空间，
+//   同时开两个会把底部内容挤出 892px 视口（本项目最典型的假红来源）。
+//   优先级：新建 > 导入 > 城市 > 关于（最弱的让最先）。
+fn toggle_city_panel() {
+    wx_city_open = !wx_city_open
+    if wx_city_open {
+        new_open = false
+        import_open = false
+        about_open = false
+        wx_city_msg = ""
+        ui.city_entry.set_text("")
+    }
+    sync_panels()
+    refresh_all()
+}
+
+// 「应用」按钮：把输入框里的城市名交给 apply_city。
+// ⚠️ 实测坑：sys.geocodenum 第一次同步取数必然拿不到（-9999）。
+//   本项目不在这里做「重试」——点了没反应比给个错答案更糟，
+//   apply_city 会如实显示「没查到该城市」，用户再点一次即可（此时缓存已就绪）。
+fn submit_city() {
+    apply_city(ui.city_entry.text())
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4928,7 +5034,10 @@ fn wx_icon(code) {
 //   "daily.time.N" 逐个 pluck —— 全程在白名单内，宿主自动重 eval。
 fn wx_live_url() {
     // 保留 URL 给调试用；实际取数走 wx_live_one。
-    return "https://api.open-meteo.com/v1/forecast?latitude=39.9042&longitude=116.4074"
+    // ★ v0.5.0：坐标跟着 wx_lat/wx_lon 走，不再写死北京。
+    return "https://api.open-meteo.com/v1/forecast"
+        + "?latitude=" + ("" + wx_lat)
+        + "&longitude=" + ("" + wx_lon)
         + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
         + "&past_days=30&forecast_days=7&timezone=auto&format=csv"
 }
@@ -4941,10 +5050,13 @@ fn wx_live_url() {
 //   每天 3 次 pluck × 37 天 = 111 次调用 —— 但同 URL 共享一个 cache，
 //   实际网络就 1 次（1.5s）。
 fn wx_live_one(i) {
-    let t = sys.weather(39.9042, 116.4074, "daily.time." + ("" + i))
-    let c = sys.weather(39.9042, 116.4074, "daily.weather_code." + ("" + i))
-    let hi = sys.weather(39.9042, 116.4074, "daily.temperature_2m_max." + ("" + i))
-    let lo = sys.weather(39.9042, 116.4074, "daily.temperature_2m_min." + ("" + i))
+    // ★ v0.5.0：坐标改用 wx_lat/wx_lon（用户选定，默认北京）。
+    //   sys.weather 会把 lat/lon 格式化进 URL（splash.rs:2160 的 {lat:.4}），
+    //   换城市 = 换 URL = 宿主重新发一次请求，这正是我们要的。
+    let t = sys.weather(wx_lat, wx_lon, "daily.time." + ("" + i))
+    let c = sys.weather(wx_lat, wx_lon, "daily.weather_code." + ("" + i))
+    let hi = sys.weather(wx_lat, wx_lon, "daily.temperature_2m_max." + ("" + i))
+    let lo = sys.weather(wx_lat, wx_lon, "daily.temperature_2m_min." + ("" + i))
     if t == "" || t == "—" || t == "n/a" { return "" }
     // t = "2026-10-04" → d8 = "20261004"
     if t.len() < 10 { return "" }
@@ -5036,6 +5148,204 @@ fn wx_live_load_cache() {
     if fetched > 0 { wx_live_fetched = fetched }
 }
 
+
+// ══ 换天气城市（v0.5.0，初赛评委建议 4 的正面答复）══════════════════
+// 用户输入城市名 → sys.geocodenum 换经纬度 → 存本机 → 重拉天气。
+//
+// ⚠️⚠️⚠️ 四条都是实测踩出来的：
+//  ① **绝不能**把 sys.geocodenum 放在 load() 开头。它是**同步阻塞**取数而 fetch
+//     是异步的 ⇒ 第一次必然返回 -9999，放在 load() 开头会把整个 load() 卡死。
+//  ② 顶层 `let` 状态变量**必须声明在 load() 之前**（见 wx_city_open 的注释）。
+//     声明在后面 ⇒ 每次 re-eval 都重置 ⇒ 面板「自己关了」。
+//  ③ **单次回调里无法重试**：Splash 没有同步延时原语（只有 start_timeout，
+//     它是异步的）。所以「点一次就成功」做不到 —— 必须靠 start_timeout 分级重试，
+//     这与本项目既有的天气取数是同一套路（见 load() 里的 0.5/1.4/2.8/4.5/6.5s）。
+//  ④ `to_chars()` 返回 U32 码点数组，逐字符重建会得到数字串 —— 已在 apply_city 标注。
+fn wx_geocode(name) {
+    // ⚠️ sys.geocodenum 返回 **number**（不是字符串），-9999 是「没查到」哨兵。
+    //   别对它调 .to_f64() —— 宿主报 "method to_f64 not found on number"。
+    let lat = sys.geocodenum(name, "lat")
+    if lat <= -9998 { return "" }
+    let lon = sys.geocodenum(name, "lon")
+    if lon <= -9998 { return "" }
+    // number 直接拼进字符串（"" + number）；本项目没有 number→定长小数
+    // 的工具函数，open-meteo 对 URL 里的多余精度自己会处理。
+    return ("" + lat) + "," + ("" + lon)
+}
+
+// 用户输入城市名 → sys.geocodenum 换经纬度 → 存本机 → 重拉天气。
+// ⚠️⚠️ 为什么必须在**用户点击路径**里调 sys.geocodenum：
+//   它是同步阻塞取数，而 fetch 是异步的 ⇒ **第一次必然返回 -9999**（数据还在路上）。
+//   实测把它放在 load() 开头会把整个 load() 卡死（日志停在第一条 issuing，
+//   连天气请求都发不出去）。所以本项目只在 apply_city（点「应用」按钮）里调，
+//   用户点第二次时缓存已就绪即拿到值。
+// ⚠️⚠️ `wx_city_msg` / `wx_city_open` 这两个状态变量**声明在文件顶部**
+//   （跟 `about_open` / `import_open` 放一起），**不在这里**。
+//   原因：Splash 的顶层语句在**每次 eval 时顺序执行**，所以顶层 `let x = 默认值`
+//   是一次「每次重算都赋一遍默认值」的赋值，不是只初始化一次。
+//   声明若排在 `load()` 之后，用户刚点开的城市面板会在下一次 re-eval 时
+//   被这行无声重置成 false —— 表现是「点开面板，输入城市，点应用，面板自己关了」。
+//   这个坑实测耗了很久才定位：面板消失被误判成 apply_city 走了成功路径。
+//   规则：**所有状态变量一律声明在 load() 之前**，且与同类变量相邻。
+
+// 校验并应用城市。ok=false 时只设提示，不动任何状态。
+// 顶栏城市按钮上显示的名字。⚠️ 必须**截断**，因为那个按钮只有 60px。
+//   而「显示用的名字」与「送去 geocode 查询的名字」可以不同 ——
+//   用户输入 "Guangzhou" 完全没问题（查询照做、坐标照用），只是按钮放不下 10 个字母。
+//   ⇒ 这里只影响显示，绝不影响实际取数。
+// ⚠️⚠️ 用 `substr`（本文件 732 行的正确实现，走 to_chars + retain + to_string），
+//   **不要**用 to_chars 手工遍历 —— 那是 U32 码点数组，会拼出数字串（见 apply_city 注释）。
+// ⚠️ 截断后加省略号，让用户知道还有字没显示（而不是以为城市就叫这个）。
+//   预算：60px - padding 12 = 48px 可用；font_regular 10px 下汉字 ≈15px、字母 ≈9px，
+//   所以 3 个汉字（45px）安全，4 个（60px）超。纯英文按 4 个字母（36px）留余量。
+fn city_label() {
+    let n = wx_city
+    if n.len() == 0 { return "北京" }
+    if n.len() <= 9 { return n }   // ≤3 汉字 或 ≤9 字母，都放得下
+    return substr(n, 0, 3) + "…"
+}
+
+fn apply_city(raw) {
+    // ⚠️⚠️ `ui.<TextInput>.text()` 在**空输入框**上返回 **nil 而不是 ""**
+    //   （start_import 也判 `text == nil`，见它的注释）。不先挡掉，
+    //   nil.to_chars() 会静默走进「请输入城市名」分支 —— 点了没反应且看不出原因。
+    //   实测踩过：输入了 Shenzhen，点「应用」连一次 geocode 请求都没发出。
+    if raw == nil {
+        wx_city_msg = "请输入城市名"
+        refresh_all()
+        return
+    }
+    let src = "" + raw
+    // ⚠️⚠️⚠️ **不要用 `for ch in src.to_chars()` 去「逐字符清洗」** ——
+    //   to_chars() 返回的是 **U32 码点数组**，不是字符串数组（本文件 713 行有血泪记录）。
+    //   所以 `name = name + ch` 拼出来的是 "83104101110122104101110"（S=83,h=104,e=101…）
+    //   这种数字串 —— 实测 geocode 请求的 URL 就是
+    //   `…/v1/search?name=83104101110122104101110`，查不到任何城市。
+    //   正解：用 `trim()` 去首尾空白（start_import 也是这么做的）。
+    let name = src.trim()
+    if name.len() == 0 {
+        wx_city_msg = "请输入城市名"
+        refresh_all()
+        return
+    }
+    // 单行 Label 多 6 个字就换行 ⇒ 提示语一律控制在 12 字内。
+    // ⚠️⚠️ Splash 的 `len()` 数的是**字节**不是字符（实测 `len("Shenzhen")` = 8，
+    //   而它是 9 个字母 —— 见 tools/probe3.sh 的探针）。中文一字 3 字节，
+    //   所以 12 字节 = 4 个汉字。这里按字节卡 36（≈12 个汉字 / 36 个字母），
+    //   仍然远超任何一个真实城市名，实际是纯粹的兜底。
+    if name.len() > 36 {
+        wx_city_msg = "城市名太长"
+        refresh_all()
+        return
+    }
+    let hit = wx_geocode(name)
+    if hit == "" {
+        // -9999 有两种成因，处理方式不同：
+        //   ① **首次必然如此**（同步取数，响应还在路上）—— 这是常态，不是错误。
+        //     自动排一次 start_timeout 重试，**用户只需要点一次**。
+        //   ② 真的查无此地 —— 重试后仍是 -9999，那时才如实报「没查到」。
+        // 所以这里不直接报错，而是进入「等一次再说」的状态。
+        wx_city_msg = "查询中…"
+        wx_city_pending = name
+        start_timeout(0.6, || retry_city(0))
+        refresh_all()
+        return
+    }
+    let p = hit.split(",")
+    if p.len() != 2 {
+        wx_city_msg = "没查到该城市"
+        refresh_all()
+        return
+    }
+    let la = p[0].to_f64()
+    let lo = p[1].to_f64()
+    if la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0 {
+        wx_city_msg = "没查到该城市"
+        refresh_all()
+        return
+    }
+
+    // ★★★ 换城市 = 换数据集：旧城市的天气必须**全部丢掉**。
+    //   不清的话界面上会同时出现两个城市的数据（merge 按 d8 去重，
+    //   新数据没回来的那几天会继续显示旧城市的天气 —— 这是会骗人的）。
+    wx_lat = la
+    wx_lon = lo
+    wx_city = name
+    wx_live_rows = []
+    wx_live_fetched = 0
+    wx_live_tried = false      // ★ 必须重置：这是本会话的幂等守卫
+    wx_past_done = false       // ★ 必须重置：历史也是按城市的
+    wx_live_save()             // 把清空后的状态落盘，别留上城市的缓存
+
+    fs.write(WX_CITY_FILE, {name: name, lat: la, lon: lo}.to_json())
+    wx_city_msg = "已切到" + name
+    wx_city_open = false
+    wx_city_pending = ""
+    refresh_all()
+    // 天气靠 sys.weather 的 re-eval 补帧；这里主动拉一次历史，界面尽快有新城市的格子。
+    wx_past_fetch()
+}
+
+
+// ★ 城市查询的重试回调（由 apply_city 用 start_timeout 排一次）。
+//   为什么要它：sys.geocodenum 是同步取数，第一次调用**必然**返回 -9999
+//   （请求刚发出、正文还在路上）。Splash 没有同步延时原语，所以不能在同一次
+//   回调里循环重试 —— 只能把「再试一次」推到 0.6 秒后。
+//   attempt 只允许 2 次：第 1 次通常就能拿到（响应已在路上）；
+//   第 2 次仍失败基本可判定「真查无此地」，此时才如实报错。
+fn retry_city(attempt) {
+    let name = wx_city_pending
+    if name == "" { return }
+    if name.len() > 36 {
+        wx_city_msg = "城市名太长"
+        wx_city_pending = ""
+        refresh_all()
+        return
+    }
+    let hit = wx_geocode(name)
+    if hit == "" {
+        if attempt < 1 {
+            start_timeout(0.9, || retry_city(1))
+            return
+        }
+        // 连等两轮仍是 -9999 → 判定真的查无此地，如实说。
+        wx_city_msg = "没查到该城市"
+        wx_city_pending = ""
+        refresh_all()
+        return
+    }
+    let p = hit.split(",")
+    if p.len() != 2 {
+        wx_city_msg = "没查到该城市"
+        wx_city_pending = ""
+        refresh_all()
+        return
+    }
+    let la = p[0].to_f64()
+    let lo = p[1].to_f64()
+    if la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0 {
+        wx_city_msg = "没查到该城市"
+        wx_city_pending = ""
+        refresh_all()
+        return
+    }
+
+    // ★★★ 换城市 = 换数据集：旧城市的天气必须全部丢掉（同 apply_city 的说明）。
+    wx_lat = la
+    wx_lon = lo
+    wx_city = name
+    wx_live_rows = []
+    wx_live_fetched = 0
+    wx_live_tried = false
+    wx_past_done = false
+    wx_live_save()
+    fs.write(WX_CITY_FILE, {name: name, lat: la, lon: lo}.to_json())
+    wx_city_msg = "已切到" + name
+    wx_city_open = false
+    wx_city_pending = ""
+    refresh_all()
+    wx_past_fetch()
+}
 
 // ★ v0.4.1：行数组的「保留窗口 + 过期丢预报」瘦身。两个参数：
 //   rows    —— 待瘦身的行数组
@@ -5155,7 +5465,9 @@ fn wx_rows_merge(add) {
 //   ⚠️ 全程不抛错：历史天气缺失只是少几个格子图标，绝不能影响主界面。
 fn wx_past_fetch() {
     if wx_past_done { return }
-    let raw = sys.fetch(WX_PAST_URL)
+    // ★ v0.5.0：URL 现在是函数（坐标可变）。换城市后 URL 变了，
+    //   宿主的 fetch 缓存 key 也跟着变 —— 旧城市的缓存不会被误用，这是对的。
+    let raw = sys.fetch(wx_past_url())
     if raw.len() < 40 { return }
     let rows = wx_csv_parse(raw)
     if rows.len() == 0 { return }
@@ -6126,11 +6438,38 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                 draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
                     color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
-            Label{width: Fill text: "" draw_text.color: c_ink3}
+            // ★ v0.5.0（初赛评委建议 4）：天气城市标在月历右上角 —— 天气图标实际出现的地方。
+            //   初版是写死的「天气按北京」死文案；现在改成**可点按钮**，显示当前城市，
+            //   点它展开城市选择面板（sys.geocodenum 换坐标 → 重拉天气）。
+            //   ⚠️⚠️ 宽度经过**两轮**实测校准，这块的教训值得写下来：
+            //   · Label 时代（只显示「天气按北京」6 字、width: Fill）：
+            //     翻月三按钮 `<` `·` `>` 都是 26px，正常。
+            //   · 改成按钮后我按「6 字 ≈ 92px」给了 width: 92 —— **过度预留**，
+            //     而按钮只显示 2 个字。总需求变成
+            //     34×3 + 92 + 72 + 26×3 + 8×6(spacing) + 20(左padding) = 412，
+            //     正好等于视口宽，而卡片内宽只有 372 ⇒ **`>` 被压到 12px**
+            //     （实测 `x=380 w=12`，最右边界仍是 392 < 412，看着完全正常）。
+            //   · 加到 116px（想显示「天气 北京」）⇒ `·` 压到 20px、**`>` 直接消失**。
+            //   ⇒ 定为 **60px**：「北京」两字在 font_regular 10px 下 ≈25px，
+            //     加左右 padding 各 6 共 37px，60px 够用且留出余量。
+            //   ⚠️ 教训：**「最右边界没超视口」≠「没挤掉东西」** ——
+            //     横向预算必须逐个元素核宽度。`verify_city.sh` 现在就是这么断言的。
+            //   ⚠️ ButtonFlat 必须写全 color_focus / border_color_focus / draw_text.color_focus，
+            //   漏了会点一下整块变白、看起来像消失了（tools/btnfocus.py 静态拦这条）。
+            wx_city_btn := ButtonFlat{text: "北京" width: 60.0 height: H_NAV
+                padding: Inset{left: 6 right: 6} on_click: || toggle_city_panel()
+                draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                    color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                draw_text +: {color: c_ink3 color_hover: c_ink2 color_down: c_ink2 color_focus: c_ink3
+                    color_disabled: c_ink3 text_style: theme.font_regular{font_size: 10}}}
             // 节日来源切换：点一下在「中国 → 国际 → 全部」之间循环。
             // 文案用 font_regular（含中文，font_code 会渲染成豆腐块）；
             // 内容是动态的，所以按钮必须静态声明 + 用 set_text 同步（见 refresh_all）。
-            fest_btn := ButtonFlat{text: "节日 中国" height: H_NAV margin: Inset{right: 6}
+            // ⚠️⚠️ 不要给它写 `margin: Inset{right: 6}` —— 父容器的 `spacing: 6`
+            //   已经提供了按钮间距，而 margin 在 flow: Right 下会让本按钮的
+            //   **y 偏移 3px**（实测 y=349，同行其余都是 y=352，顶栏肉眼可见地不在一条线上）。
+            //   同理 wx_city_btn 也不写 margin。要留白就调 spacing。
+            fest_btn := ButtonFlat{text: "节日 中国" height: H_NAV
                 padding: Inset{left: 8 right: 8} on_click: || cycle_festival_mode()
                 draw_bg +: {border_radius: 6.0 color: c_accent_s color_hover: c_accent_s color_down: c_accent_s
                     color_focus: c_accent_s border_size: 1.0 border_color: #xf0d9c9 border_color_focus: #xf0d9c9}
@@ -7645,12 +7984,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     //   tools/featflow.py 的 E 段就永远读不到它（今天 10-04 正是这种情况）。
                     egg_date_l := Label{text: "" draw_text.color: c_ink
                         draw_text.text_style: theme.font_bold{font_size: 13}}
-                    // ★ v0.5.0（初赛评委建议 4）：天气坐标是写死的北京，
-                    //   界面上必须说出来 —— 否则用户会以为查的是自己所在城市。
-                    //   改同一行的文案而不是新增一行：本页再加一行会把下面的
-                    //   时间胶囊挤出 892px 视口（本项目最典型的假红来源）。
-                    Label{width: Fill text: "翻到任意一天 · 天气按北京" draw_text.color: c_ink3
-                        draw_text.text_style: theme.font_regular{font_size: 10}}
+                    // ★ v0.5.0（初赛评委建议 4）：天气坐标是写死的北京，界面上必须说出来。
+                    //   初版把这句话放在这里（时光日记卡标题行），那是错的——那张卡在页面很下方，
+                    //   而用户是在月历上看到天气图标的，视线所在的位置没有「北京」字样。
+                    //   已移到月历顶栏（搜 `天气按北京`，在三个视图切换按钮之后）。
+                    //   本行只保留一个 Fill Label：flow: Right 下多个 Fill 会平分宽度，
+                    //   留空即可（width: Fill 的空 Label 不显示任何东西，也不占竖向预算）。
                 }
                 dl_ev := Label{width: Fill text: "" draw_text.color: c_ink2
                     draw_text.text_style: theme.font_regular{font_size: 10}}
@@ -7819,6 +8158,42 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         }
     }
 
+    // ══ 天气城市面板（点月历顶栏的城市按钮展开）════════════════════
+    // v0.5.0 · 初赛评委建议 4 的正面答复。
+    // 接线：wx_city_btn → toggle_city_panel() → 面板 → submit_city() → apply_city()。
+    //
+    // ⚠️ 与 import_panel / new_panel 同一套路：**静态声明 + set_visible 控制显隐**。
+    //    输入框放进 on_render 就没有稳定的 `ui.city_entry` 引用，text() 全部失效。
+    // ⚠️ 显隐必须走 sync_panels() —— 四个面板抢同一块竖向空间。
+    // ⚠️ 高度用 Fit：内部全是静态子节点，没有 on_render，Fit 是安全的。
+    // ⚠️ 高度比 import_panel（204）矮 —— 这个面板信息少，少占就是多一分余量。
+    // ⚠️ 文案都控制在单行内：单行 Label 多 6 个字就换行 → 后面全被裁（本项目血泪）。
+    city_panel := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+            draw_bg +: {color: c_paper}
+            // 说明为什么是「选城市」而不是「自动定位」—— 这句话本身就是答案。
+            Label{text: "天气按城市取 · 不做自动定位" draw_text.color: c_ink3
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+            city_entry := TextInput{width: Fill height: 40 empty_text: "城市名，如 深圳"
+                draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                    border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            RoundedView{width: Fill height: 32.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                city_msg := Label{width: Fill text: "" draw_text.color: c_ink3
+                    draw_text.text_style: theme.font_regular{font_size: 10}}
+                ButtonFlat{text: "取消" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_city_panel()
+                    draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ButtonFlat{text: "应用" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || submit_city()
+                    draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                        color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+            }
+        }
+    }
+
     // ══ 新建日程面板（点月历格子 / 点工具条「+ 新建」展开）════════════
     // 用户需求原话（2026-09-30）：「为什么那些日期不能点开，我在具体的日期里面去写下
     //   我这一天要做些什么事情」+「专门有一个界面：选择日期，然后可以选择重复这个日期，
@@ -7973,7 +8348,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             draw_bg +: {color: c_card border_radius: 10.0 border_size: 1.0 border_color: c_line}
             // ⚠️⚠️ 这里原来写死 height: 76.0 / 72.0（2026-10-08 修）——
             //    里面三行 Label（标题 15px + 队伍 12px + 版本 11px）实际需要约 92px，
-            //    写死高度把最后一行「版本 0.2.0 · Apache-2.0」整个裁掉了（/snap 读不到，
+            //    写死高度把最后一行「版本 0.5.1 · Apache-2.0」整个裁掉了（/snap 读不到，
             //    界面上也看不见）。正是 AGENTS.md 记的那条：容器一律 height: Fit。
             // ⚠️⚠️ 但光把 76.0 改成 Fit **不够**（实测右列仍是 r=[118,284,260,72]）：
             //    外层是 `flow: Right`，高度被 Image 的 72px 定死，而 Fit 子节点
@@ -7984,7 +8359,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
-                    Label{width: Fill text: "版本 0.2.0 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                    Label{width: Fill text: "版本 0.5.1 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
                 }
             }
             Hr{draw_bg +: {color: c_line border_size: 0.0 height: 1.0}}
@@ -7992,7 +8367,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "© Google LLC · Noto Animated Emoji · CC BY 4.0"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
-            Label{width: Fill text: "本应用申请 storage + net + model：日历数据全部留在本机；net 仅用于读取 Open-Meteo 天气（只读，不发送任何事件数据）。"
+            // ★ v0.5.0：net 现在有两处用途（天气 + 城市名换坐标），文案必须跟着改，
+            //   否则又是一处「文档说的和代码做的不是一回事」。
+            //   ⚠️ 单行 Label 多 6 个字就换行 → 后面全被裁（本项目血泪）。
+            //   这句已接近单行上限（实测 ≈15 字/行，容器内宽 338px），所以拆成两句。
+            Label{width: Fill text: "本应用申请 storage + net + model，日历数据全部留在本机。"
+                draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            Label{width: Fill text: "net 只连 Open-Meteo 两个域：取天气，以及把你输入的城市名换成坐标；不做自动定位。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "model 只在你点「请模型给方案」时，把这一条冲突的标题与时长发给你自己配置的 AI 提供方；改期要你点「采纳」才写入，判定与校验都在本机。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}

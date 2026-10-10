@@ -656,6 +656,93 @@ def main():
         e, _ = wait_id("entry")
         print("entry 存在:", e is not None)
 
+    elif cmd == "city_panel":
+        # 打开天气城市面板（v0.5.0）。
+        # ⚠️ 城市按钮的文案是**当前城市名**（默认「北京」），换过城市后就不叫这个了 ——
+        #   所以这里不按文案找，改按**顶栏那一行的位置**找：
+        #   它是「三个视图切换按钮之后、节日切换之前」那个 width=92 的按钮。
+        #   判据：同一 y 上、宽 > 40、且不是 < · > / 月周日 / 节日。
+        s = snap()
+        lt = [x for x in s if x.get("t") == "<" and x.get("ty") == "Button"]
+        if not lt:
+            print("FAIL: 找不到翻月按钮「<」，顶栏没渲染")
+            return
+        y = lt[0]["r"][1]
+        skip = ("<", ">", "·", "月", "周", "日", "[月]", "[周]", "[日]")
+        cands = [x for x in s
+                 if x.get("r") and x["r"][1] == y
+                 and x.get("ty") == "Button"
+                 and 40 < x["r"][2] <= 120
+                 and not any(k in (x.get("t") or "") for k in skip)
+                 and "节日" not in (x.get("t") or "")]
+        if not cands:
+            print("FAIL: 顶栏那一行没找到城市按钮")
+            return
+        print("click 城市按钮", cands[0].get("t"), click_node(cands[0]))
+        time.sleep(0.6)
+        s2 = snap()
+        ok = any(x.get("ty") != "Splash" and "天气按城市取" in (x.get("t") or "")
+                 for x in s2)
+        print("城市面板已打开:", ok)
+
+    elif cmd == "city_cancel":
+        # ⚠️ 不能用 wait_btn("取消")：导入面板 / 新建面板里也有「取消」按钮，
+        #   wait_btn 会匹配到视口里的任意一个，点错目标（实测点完面板没收起，
+        #   差点被当成「面板互斥坏了」）。这里按**城市面板自己的控件**找：
+        #   它的标题 Label 是「天气按城市取 · 不做自动定位」，同一行右侧的按钮就是取消。
+        # ⚠️⚠️⚠️ 必须等**整帧内容指纹**稳定再读，不能裸 snap()。
+        #   宿主的更新不是原子的：点开面板后，「标题 Label」先进布局树、
+        #   「取消 / 应用」晚一两帧才进。裸 snap() 读到的是**半帧** ——
+        #   于是 hint 找得到（y=273）、cands 却空（按钮还没到），
+        #   报出来的错是「面板没开」，与真相完全无关（本项目已在 e2e.py 里
+        #   为 goto/cycle 装过同一个 defenses，这里是同一坑的另一个入口）。
+        #   `_stable_consistent()` 要求整帧指纹连续 0.3s 完全一致。
+        # ⚠️ 不能用 wait_render：它的判据是数日历日期数字，而城市面板打开时
+        #   月历让位、数字为 0 ⇒ 恒 False ⇒ 白等满 timeout。
+        deadline = time.time() + 8.0
+        s = snap()
+        while time.time() < deadline:
+            s = snap()
+            has_cancel = any(x.get("r") and x.get("ty") == "Button"
+                             and "取消" in (x.get("t") or "")
+                             and x["r"][1] > 340 for x in s)
+            has_hint = any("天气按城市取" in (x.get("t") or "") for x in s)
+            if has_cancel and has_hint:
+                break
+            time.sleep(0.4)
+        hint = None
+        for x in s:
+            # ⚠️⚠️ 必须排除根 Splash 节点：它的 `t` 是**整份脚本源码**，
+            #   里面当然含「天气按城市取」这句注释 —— 不排除的话 hint 会命中它，
+            #   y=0，于是 `0 < 365-0 < 160` 为假，下面的取消按钮一个都匹配不上。
+            #   症状极具误导性：快照里明明有「取消」，却报「找不到」。
+            #   （项目里查界面文本的脚本都要过这一关，见 verify_city.sh。）
+            if x.get("ty") != "Splash" and "天气按城市取" in (x.get("t") or ""):
+                hint = x
+                break
+        if not hint:
+            print("FAIL: 城市面板没开（找不到标题「天气按城市取」）")
+            return
+        y = hint["r"][1]
+        # ⚠️ 容差要放宽：标题在 y≈273，而「取消/应用」在 y≈365（下面隔着一个输入框），
+        #   实测差 92px。窄容差（试过 60）会漏掉按钮。
+        cands = [x for x in s
+                 if x.get("r") and 0 < (x["r"][1] - y) < 160
+                 and x.get("ty") == "Button"
+                 and "取消" in (x.get("t") or "")]
+        if not cands:
+            print("FAIL: 城市面板里找不到「取消」按钮")
+            print("  快照里的 Button:", [(x.get("t"), x.get("r")) for x in s
+                                        if x.get("ty") == "Button"])
+            print("  快照 Label:", [(x.get("t"), x.get("r")) for x in s
+                                    if x.get("ty") == "Label" and x.get("t")][:6])
+            return
+        print("click 取消", click_node(cands[0]))
+        time.sleep(0.6)
+        s2 = snap()
+        left = any(x.get("ty") != "Splash" and "天气按城市取" in (x.get("t") or "") for x in s2)
+        print("城市面板已收起:", not left)
+
     elif cmd == "wipe":
         if wipe_entry():
             print("输入框已清空")
