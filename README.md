@@ -447,7 +447,10 @@ macOS / Windows 上没有 provider。因此在桌面端申请 `location` 权限
 所以应用选了另一条路：**月历右上角的城市按钮 → 输入城市名 → 换坐标 → 按该坐标取天气**。
 默认仍是北京，顶栏按钮显示当前城市名，不装作是自动定位。
 
-![天气城市选择](bundle/screenshots/01b-city.png)
+![天气城市选择](docs/media/city-picker.png)
+
+<sub>这张图是 [`01b-city.png`](bundle/screenshots/01b-city.png) 的裁剪版（只截城市输入区，
+完整整屏图见链接）——商店截图是824×1702 的竖长图，直接放进正文会撑出一屏空白。</sub>
 
 这条取舍在官方文档里也有依据——`ui-profile-l0.md` 写着
 「a coordinate a card carries is a place the device is not」：
