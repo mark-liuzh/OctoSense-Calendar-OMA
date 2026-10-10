@@ -659,7 +659,10 @@ fill = color.mix(color_focus, focus)
 | 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` **21/21 PASS**（宿主错误 0）· `verify_city.sh` **12/12**（宿主错误 0）· `shots.sh` **SHOTS PASS**（首次全绿）· **往返无损 0/0/4** |
 | 提交 issue | [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ★ v0.5.1 权威值（2026-10-10）
+### ★ 当前权威值 = v0.5.1（2026-10-10）
+
+> 本README 里**只有这一节**是当前权威值。其余「历史记录」节的 digest / signature 均已作废，
+> 只为追溯留档，不可作为发布基准。
 
 | 字段 | 值 |
 | --- | --- |
@@ -699,7 +702,10 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 
 详见 [`docs/RELEASE-NOTES-v0.5.1.md`](docs/RELEASE-NOTES-v0.5.1.md)。
 
-### v0.5.0（初赛版本 · 历史记录）
+### v0.5.0（初赛提交版本 · 历史记录，**已作废**）
+
+> ⚠️ 本节所有 digest / signature 均**已作废**，当前发布基准是上方 v0.5.1。
+> 保留原因：初赛 issue #198 的提交基准在此，复赛评审会回溯。
 
 | 字段 | 值 |
 | --- | --- |
@@ -725,7 +731,12 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 （`tools/test_ai_gates.py`，38 条用例；`--sync` 会把13 条拒绝理由与
 `ai_verify` 逐字比对，避免夹具漂移成假绿）。
 
-### v0.4.1（初赛版本 · 历史记录）
+### v0.4.1（初赛提交版本 · 历史记录，**已作废**）
+
+> ⚠️ 本节 digest `eb64816c…` 是**初赛提交 #77 的基准**，已不再是当前发布基准（见上方 v0.5.1）。
+> 本节完整保留那次返工过程是有意的：manifest 里的digest 曾与 bundle 实算不一致，
+> 靠「逐处实算 + 对解包件跑 hub check」才查出来。**留在这里是为了让评审看到这件事发生过、以及怎么被发现的。**
+> 逐处核对结论见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)。
 
 **修订链**：
 
@@ -734,11 +745,11 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 | issue #77 描述原始 | `5621ab9…` | `71f671f5…` | `07ce03fd…` | 2026-10-04 提交，已过期 |
 | 第一条更正评论（已删） | `f4e59973…` | `cfcf3b9e…` | `59d4b56a…` | **幽灵值**——从未对得上 git HEAD bundle 实算 |
 | 第二次更正（18:35） | `c0d4964…` | `25283a80…` | `12b8d226…` | 20:48 改 `listing.json` 截图清单后已过期 |
-| **当前权威**（2026-10-06 20:48） | **`a0c9594…`** | **`eb64816c…`** | **`a1eff36a…`** | 与 git HEAD bundle 实算 blake3 一致，本机 hub check **PASSED** |
+| **v0.4.1 当时的权威**（2026-10-06 20:48，**已被 v0.5.1取代**） | **`a0c9594…`** | **`eb64816c…`** | **`a1eff36a…`** | 与当时的 git HEAD bundle 实算 blake3 一致，本机 hub check **PASSED** |
 
 **为什么前面几条都不对**：`cfcf3b9e…` 是 mark-liuzh 在 `8100baf` commit 手工塞进 manifest 的"幽灵值"，从来没对应实际 bundle 字节。`25283a80…` 是 18:35 第二次重发布时的有效值，但 20:11 的 `73d1854` 把 `listing.json` 的商店截图清单从 7 张换成主线叙事 6 张 + 彩蛋 1 张（撞 listing 最多 8 张上限，砍掉与叙事重叠的 08/09/11），bundle 字节随之改变、重签为 `eb64816c…`。发布基准因此前移到 `a0c9594`。
 
-**当前权威值**：
+**v0.4.1 当时的权威值**（digest `eb64816c…`，已被 v0.5.1 取代）：
 
 | 字段 | 值 |
 | --- | --- |
@@ -757,13 +768,13 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 2. ✅ 删除第二次重发布的 Release 404586535（旧 zip 2,129,679 bytes / digest `25283a80…`）
 3. ✅ Tag `v0.4.1` force-update 到 `a0c9594`；另建 `v0.4.1-r3` 同指该 commit（GitHub Release 不允许复用已存在 tag）
 4. ✅ 新建 GitHub Release 404703213，上传 r3 zip（2,129,680 bytes + sha256，实测下载校验一致）
-5. ✅ Release 404703213 的 zip 即权威件（2,129,680 bytes + sha256，实测下载校验一致）
+5. ✅ Release 404703213 的 zip 即v0.4.1 的权威件（2,129,680 bytes + sha256，实测下载校验一致）
 6. ✅ Issue #77 描述 digest / signature / commit 同步更新到 r3
 7. ✅ Issue #77 第三次重发布评论（id [`6016799102`](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77#issuecomment-6016799102)）记录 `25283a80…` → `eb64816c…` 的原因
 
 **下载与校验**：
 
-- GitHub Release（r3，权威件）：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
+- GitHub Release（r3，v0.4.1 当时的权威件）：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3
 - Git commit：https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e
 - SHA256 校验：`7849c9bfd42c0535af86410bca0bb3da8bb6439e86a80832d3d4168d0e3a7d13` ✅（2026-10-06 实测下载一致）
 
