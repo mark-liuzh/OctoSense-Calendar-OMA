@@ -654,12 +654,52 @@ fill = color.mix(color_focus, focus)
 | 版本 | `0.5.1`（天气可按城市取数：月历右上角选城市，**不做自动定位**；详见下方「天气为什么是选城市而不是自动定位」） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model`（**不含** `location`） |
-| 发布基准 | GitHub [`7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b)（tag `v0.5.0`；2026-10-10）· digest `05c9de8b…` / signature `b6412507…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.5.0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.0)（id 408621775）下载件解包**三处逐字节一致**；zip sha256 本地与远端**实测一致** |
-| 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` 全量回归 **21/21 PASS**（宿主错误 0）· **往返无损 0/0/4** |
+| 发布基准 | GitHub tag [`v0.5.1`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.1)（2026-10-10）· digest `2d87d36d80d7e188…` / signature `12146f93c520a587…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-10）。对照组不带 key → `refused` |
+| 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` **21/21 PASS**（宿主错误 0）· `verify_city.sh` **12/12**（宿主错误 0）· `shots.sh` **SHOTS PASS**（首次全绿）· **往返无损 0/0/4** |
 | 提交 issue | [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ★ v0.5.0 权威值（2026-10-10）
+### ★ v0.5.1 权威值（2026-10-10）
+
+| 字段 | 值 |
+| --- | --- |
+| Commit | `2c1a00f6a72336ede3d12078dc56715b2bf9e431`（分支 `main`，已 fast-forward 并入） |
+| Tag | `v0.5.1` |
+| capabilities | `["storage", "net", "model"]`（**不含** `location`） |
+| network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
+| 验证 | `verify_city.sh` **12/12** · `run_conflict.sh` **21/21** · `shots.sh` **SHOTS PASS** · 宿主 `[E]` **0** |
+| 往返无损 | 新增 0 / 改期 0 / 跳过 4 |
+| Bundle blake3 | `2d87d36d80d7e1886ff83f3bd9e2047d6352f15db5067bc835bb5ebf4ba352c0` |
+| Signature (Ed25519) | `12146f93c520a587c162467ab201e6e310bbdac8…` |
+
+**`hub check` 已跑过**（2026-10-10）：
+
+```
+com.oma.octosense.calendar 0.5.1 — PASSED
+  grants: capabilities {"model", "net", "storage"},
+          hosts {"api.open-meteo.com", "geocoding-api.open-meteo.com"},
+          storage 16777216 bytes, agent none
+```
+
+对照组（不带 `--publisher-key`）→ `refused: publisher key "OMA" is not registered with this hub`。
+复核命令：
+
+```bash
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+```
+
+**本版要点**：
+
+- **天气可按城市取**（答复初赛评委建议 4）。仍**不做自动定位** —— 桌面端
+  `sys.gps` 恒返回 `-9999`（宿主源码注释：数据源只有 Android 的 LocationListener），
+  申请 `location` 只会让商店弹「使用你的位置」却拿不到数据。
+- **A 类文档矛盾 4 条全修**：`PRIVACY.md` 单域口径、披露 `model` 与城市名两处外发、
+  「天气按北京」移到月历顶栏、`release_notes` 换 v0.5.0 口径。
+- **顺带修掉 `shots.sh` 长期存在的 3 条 FAIL** —— 04/05 两张商店截图内容原本是错的。
+
+详见 [`docs/RELEASE-NOTES-v0.5.1.md`](docs/RELEASE-NOTES-v0.5.1.md)。
+
+### v0.5.0（初赛版本 · 历史记录）
 
 | 字段 | 值 |
 | --- | --- |

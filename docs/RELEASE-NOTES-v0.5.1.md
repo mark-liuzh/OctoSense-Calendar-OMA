@@ -130,22 +130,36 @@ v0.5.0 的处置是**加标注**（界面写明「天气按北京」）。v0.5.1
 
 ---
 
-## 六、提交前必须做的事
+## 六、发布件与准入
 
-⚠️ **本机没有 publisher 私钥**（v0.5.0 的签名是在有密钥的环境完成的），
-所以 `bundle/manifest.json` 的 `bundle_blake3` 目前是**过期的**
-（`main.splash` 与截图都变了）。提交前必须：
+| 字段 | 值 |
+| --- | --- |
+| Bundle blake3 | `2d87d36d80d7e1886ff83f3bd9e2047d6352f15db5067bc835bb5ebf4ba352c0` |
+| Signature (Ed25519) | `12146f93c520a587c162467ab201e6e310bbdac8…` |
+| Publisher key id | `OMA`（沿用 v0.4.0 / v0.5.0 的同一把钥匙） |
+| 公钥 | `46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380` |
+| 密钥位置 | `~/.octosense/oma-publisher.key`（仓库外） |
 
-```bash
-hub stamp bundle
-hub sign-manifest bundle --key <publisher-key-file> --key-id OMA
-hub check bundle --publisher-key OMA=46b11cc1…   # 期望 PASSED
+**`hub check` 结果（2026-10-10）**：
+
+```
+com.oma.octosense.calendar 0.5.1 — PASSED
+  grants: capabilities {"model", "net", "storage"},
+          hosts {"api.open-meteo.com", "geocoding-api.open-meteo.com"},
+          storage 16777216 bytes, agent none
 ```
 
-并按老规矩核对**五处一致性**：仓库 `bundle/` · GitHub 该 commit ·
-Release 下载件解包 · `hub check` · zip sha256。
+对照组 `hub check bundle`（不带 `--publisher-key`）→
+`refused: publisher key "OMA" is not registered with this hub`。
 
----
+复核命令：
+
+```bash
+hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
+```
+
+⚠️ 五处一致性（仓库 · GitHub commit · Release 下载件 · `hub check` · zip sha256）
+**在本文件写下时只完成了前两处**；Release 资产与 zip sha256 待发布后回填核对。
 
 ## 七、与 v0.5.0 的关系
 
