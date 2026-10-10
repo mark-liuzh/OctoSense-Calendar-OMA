@@ -3,7 +3,7 @@
 > **在月历上点一天直接写日程（生日可设每年重复）；粘贴一段 ICS，看清冲突，改完无损导出。**
 
 运行在 OctoSense 隔离宿主里的脚本应用（Splash 语言，`bundle/main.splash` 一个文件）。
-没有账户、没有云同步。申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）——日程、待办、心情、目标、时间胶囊等**用户数据**不出这台设备。
+没有账户、没有云同步。申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）+ `model`（一次性的模型调用，用于给冲突改期建议）——日程、待办、心情、目标、时间胶囊等**用户数据**不出这台设备。
 
 | 主界面 | 点格子写日程 | ICS 导入 | 冲突详情与建议 |
 | --- | --- | --- | --- |
@@ -111,28 +111,29 @@ card-host --bundle bundle --app-data /tmp/octo-data --allow-unsigned --stamp
 python3 <workspace>/OctoScript-App-Design-Flow/tools/octo check <此仓库>/bundle
 ```
 
-发布基准 **`a0c9594752830d583f9cd532f5e79f43b313a51e`**（GitHub main HEAD + `v0.4.1` / `v0.4.1-r3` tag 指向同一 commit；2026-10-06 20:48 第三次重发布）。
-这一份 bundle 在**本仓库 `bundle/`、GitHub 该 commit、Release `v0.4.1-r3`（id 404703213）、团队空间节点 `Hh5OifAjEb4AbEcmgWrCqA`（r3 发布件）四处逐字节一致**，
-manifest 声明的 digest 是 `eb64816c…` / signature `a1eff36a…`（key_id `OMA`）。
+发布基准 **`7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`**（tag `v0.5.0`；2026-10-10）。
+这一份 bundle 在**本仓库 `bundle/`、GitHub 该 commit、Release `v0.5.0`（id 408621775）下载件解包三处逐字节一致**，
+manifest 声明的 digest 是 `05c9de8b…` / signature `b6412507…`（key_id `OMA`）。
 
 本机（ody-cai Mac）复现：
 
 ```bash
 _toolchain/OctoSense-App-Hub/target/release/hub check bundle \
   --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
-# → com.oma.octosense.calendar 0.4.1 — OK（PASSED，0 警告）
+# → com.oma.octosense.calendar 0.5.0 — PASSED
+#   grants: capabilities {"model", "net", "storage"}, hosts {"api.open-meteo.com"}
 ```
 
 > ⚠️ **本机 hub 必须带 `--publisher-key`**：不带时会报
 > `publisher key "OMA" is not registered with this hub`，这是本机没装公钥造成的，不是 bundle 问题。
 >
-> ⚠️ **不要在本机显式跑 `hub stamp` 去「重算」digest**：当前 `eb64816c…` 已与远端发布件一致，
-> 再 stamp 会把 manifest 改成 `25283a80…`，让本仓库与已发布件再次分叉。
+> ⚠️ **不要在本机显式跑 `hub stamp` 去「重算」digest**：当前 `05c9de8b…` 已与远端发布件一致，
+> 再 stamp 会让本仓库与已发布件分叉。
 > （`octo check` 对已签名 manifest 会拒绝重戳，不会自动改。）
-> 复核发布件请以 GitHub `a0c9594` / Release `v0.4.1-r3` / 团队空间 r3 节点为准。
+> 复核发布件请以 GitHub `7e6fd1a` / Release `v0.5.0` 为准。
 
-历史背景（v0.4.1 曾经历三次重发布，`cfcf3b9e…` 与 `25283a80…` 均为过期值）见下方「参赛信息」与
-[`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
+历史背景见下方「参赛信息」与 [`docs/RELEASE-NOTES-v0.5.0.md`](docs/RELEASE-NOTES-v0.5.0.md)；
+初赛版本（v0.4.1）的三次重发布考据见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
 
 ## 30 秒看懂它
 
@@ -626,13 +627,41 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.4.1`（v0.3.1 之后的**纯修复增量**：5 处可见缺陷修复 + 2 项收尾动作；详见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)） |
+| 版本 | `0.5.0`（按初赛评委四条建议处置：接入 `model.complete` 让模型参与改期 + 权限口径收紧；详见 [`docs/RELEASE-NOTES-v0.5.0.md`](docs/RELEASE-NOTES-v0.5.0.md)） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 发布基准 | GitHub [`a0c9594752830d583f9cd532f5e79f43b313a51e`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/a0c9594752830d583f9cd532f5e79f43b313a51e)（main HEAD + `v0.4.1` / `v0.4.1-r3` tag 同一 commit；2026-10-06 20:48 第三次重发布）· digest `eb64816c…` / signature `a1eff36a…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.4.1-r3`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.4.1-r3)（id 404703213）**三处逐字节一致** |
+| 能力 | `storage` + `net`（1 个 host：`api.open-meteo.com`）+ `model` |
+| 发布基准 | GitHub [`7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/commit/7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b)（tag `v0.5.0`；2026-10-10）· digest `05c9de8b…` / signature `b6412507…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告。本仓库 `bundle/`、GitHub 该 commit、Release [`v0.5.0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.0)（id 408621775）下载件解包**三处逐字节一致**；zip sha256 本地与远端**实测一致** |
+| 验证 | 静态门禁 9 项全过 · 七道闸夹具 **38/38** · `run_conflict.sh` 全量回归 **21/21 PASS**（宿主错误 0）· **往返无损 0/0/4** |
 | 提交 issue | [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ⚠️ 准入检查（2026-10-06 修订记录）
+### ★ v0.5.0 权威值（2026-10-10）
+
+| 字段 | 值 |
+| --- | --- |
+| Commit | `7e6fd1ac5bda1493d43f4cb52ce734dfc219d46b`（分支 `v0.5.0-dev`，已 fast-forward 并入 `main`） |
+| Tag | `v0.5.0` |
+| Bundle blake3 | `05c9de8b2fdd7b39420ce9ae6a5d0d14b39c21d19f779434360d3d308fef3215` |
+| Signature (Ed25519) | `b64125073e2d5af670dc42ef614a3ff5…` |
+| Publisher key id | `OMA`（沿用 v0.4.1 的同一把钥匙） |
+| capabilities | `["storage", "net", "model"]` |
+| network.hosts | `["api.open-meteo.com"]` |
+| Release | [`v0.5.0`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.0)（id 408621775） |
+| Zip | `octosense-calendar-0.5.0.zip` · 2,135,365 bytes（22 files） |
+| Zip sha256 | `e860406848bae6b2b6b61419442244a08181a1f860c51369ccf5a9735d535548` |
+
+**五处一致性**（v0.4.1 曾因 digest 撕裂返工三次，故逐处验过）：
+① 仓库 `v0.5.0:bundle/manifest.json` ② 工作区 `bundle/`
+③ 从 GitHub Release 下载的 zip 解包 ④ 对解包件跑 `hub check` → **PASSED**
+⑤ zip sha256 本地与远端下载件一致。①②③ 的 digest 与 signature 完全相同。
+
+**已知未验证**：`model.complete` 的**成功路径**尚未验证 —— 本机 `card-host`
+不注册该服务（实测 `host.request` 既不立刻失败也不触发回调），
+真机验证需本版本先入商店。已能持续验证的是七道闸判定逻辑，做成了常驻门禁
+（`tools/test_ai_gates.py`，38 条用例；`--sync` 会把13 条拒绝理由与
+`ai_verify` 逐字比对，避免夹具漂移成假绿）。
+
+### v0.4.1（初赛版本 · 历史记录）
 
 **修订链**：
 
