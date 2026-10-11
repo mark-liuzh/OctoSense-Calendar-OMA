@@ -19,6 +19,7 @@
 - [另外六个分区（2026-10-01 新增）](#另外六个分区2026-10-01-新增)
 - [端到端实测（可复现）](#端到端实测可复现)
 - [ICS 支持范围](#ics-支持范围)
+- [已知限制](#已知限制)
 - [冲突消解规则](#冲突消解规则)
 - [数据来源与限制](#数据来源与限制)
 - [权限与隐私](#权限与隐私)
@@ -315,7 +316,42 @@ bash tools/run_features.sh   # ⑧ 待办 / 心情 / 目标 / 彩蛋 / 日周月
 | `UID` / `SEQUENCE` | 是 | 是 | `UID` 用于判重；`SEQUENCE` 在列表里以 `# seq N` 显示 |
 | `ORGANIZER` | 是 | 否 | 用于承诺权重判定（「有约在前」），导出时不重写 |
 | `RRULE`（重复规则） | 原样保留 | 原样写回 | **导入的不展开**；界面上手写的四档会展开 —— 见下方限制 |
-| `VALARM` / `VTIMEZONE` | **否** | **否** | 不解析；`TZID` 作为不透明字符串保留 |
+| 其余属性（`VALARM` / `ATTENDEE` / `CATEGORIES` / `CLASS` / `TRANSP` / `GEO` / `PRIORITY` / `CREATED` / `LAST-MODIFIED` / `X-*` …） | 原样保留 | 原样写回 | **不解析、不显示、但绝不丢弃**：整行原文留在事件里，导出时原样写回。容器属性（`BEGIN:VALARM`…`END:VALARM`）连包裹一起保留，导出仍是合法 ICS。导入面板会列出这次带进来了哪几类 |
+| `VTIMEZONE`（区块定义） | 原样保留 | 原样写回 | 不解析、不做换算，见下方限制 |
+
+## 已知限制
+
+这一节写的是**本应用做不到的事**。列在这里而不是藏进发布说明，是因为
+用户从商店页点进来先看 README —— 不写就会误判成「应用坏了」。
+
+### 跨时区不做换算
+
+ICS 里写 `DTSTART;TZID=America/New_York:20261103T090000` 时，本应用**按字面的
+09:00 使用，不换算成你所在时区**。事件列表会在时间旁标「按字面」，让你能看出这件事。
+
+原因不是「懒得做」而是「拿不到做所需的权威数据」：完整换算要读 `VTIMEZONE` 区块里的
+`STANDARD` / `DAYLIGHT` 夏令时规则，而宿主本身**没有时区库**
+（`makepad/platform/src/script/timer.rs` 的注释原文：「The platform has no timezone
+database」）。仓促实现半套换算比不做更危险 —— 那会算出一个看起来对、其实错的时刻。
+`VTIMEZONE` 区块的原文会被原样保留，导出时写回，你可以在别的软件里正常换算。
+
+### Windows 上天气与城市选择拿不到数据
+
+Windows 用户会看到天气栏一直是空的、换城市按钮点了没反应，而且**没有任何错误提示**。
+
+这是**宿主网络层的缺陷，不是本应用的 bug**，本应用无法绕过：
+
+```
+makepad/platform/src/script/res.rs:574             平台自己设了一个「保留」header
+ → makepad/platform/network/src/backend/windows/http.rs:43
+ → makepad/platform/network/src/blocking_http.rs:220  is_reserved_header → 拒绝
+ → makepad/platform/network/src/blocking_http.rs:513  "user-agent" 在保留名单里
+```
+
+只有 Windows 中招：Linux 与 Apple 后端是手写 socket 直接拼 header 字符串，
+绕过了这个校验；只有 Windows 后端复用了 `blocking_http::Request`。
+修复归属 makepad 仓库，本应用改不了。日历本体（导入 / 冲突 / 改期 / 导出）
+在 Windows 上**完全正常**，只有这两项联网功能受影响。
 
 ## 冲突消解规则
 

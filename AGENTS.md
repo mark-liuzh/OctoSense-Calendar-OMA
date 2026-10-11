@@ -44,11 +44,34 @@ Add this app's own requirements, data sources and tests below.
 ### 权限：`storage` + `net`（仅 Open-Meteo 天气）+ `model`（v0.5.0 起）
 
 `storage` 性质可写：事件库上限 16 MiB（宿主默认）。
-`net` 性质**仅限天气**：月历每个格子的左上角读 Open-Meteo 公开预报，含过去 30 天的历史，
-冷启动只拉一次并缓存到本机，离线回落到上次缓存；manifest 里
-`network.hosts` **只列 `api.open-meteo.com` 一个域** ——
-`geocoding-api` 与 `archive-api` 实测在代码里零引用（天气走 `sys.weather` 的逐日 pluck），
-按「只申请界面用得到的权限」已移除（v0.5.0，依初赛评委建议 3）。
+`net` 性质**仅限天气与城市坐标**：月历每个格子的左上角读 Open-Meteo 公开预报，
+含过去 30 天的历史，冷启动只拉一次并缓存到本机，离线回落到上次缓存；
+顶栏城市按钮把城市名换成经纬度（v0.5.1 起）。manifest 里
+`network.hosts` **列 2 个域**：`api.open-meteo.com`（天气）与
+`geocoding-api.open-meteo.com`（城市名 → 坐标），`archive-api` 实测零引用故未列入。
+
+⚠️⚠️ **不要删 `geocoding-api.open-meteo.com`**（2026-10-12 复核，v0.5.1 曾误删过一次）：
+
+```
+main.splash        sys.geocodenum(name, "lat")
+ → widgets/src/splash.rs:1662      geocode_url(&name, heap_key)   ← URL 是宿主拼的
+ → widgets/src/splash.rs:1663      script_data_fetch(&url)
+ → platform/src/script/res.rs:551  script_url_allowed(heap_key, url)   ← 就是这道门禁
+ → platform/script/std/src/gate.rs:68   比对 manifest 的 network.hosts
+```
+
+`res.rs:550` 的源码注释原文：「The data behind `sys.*` is fetched on behalf of
+whichever isolate is running right now; **it answers to that isolate's allowlist.**」
+
+⇒ `sys.geocodenum` **不是**绕过白名单的宿主内建能力，与 `sys.fetch` / `sys.weather`
+共用同一道门禁。`grep -c geocoding bundle/main.splash` = 0 是「**用了但看不见**」
+（URL 由宿主拼装，应用源码里自然搜不到域名），**不是**「没用到」。
+
+删掉的后果：城市按钮点下去 `script_url_allowed` 返回 false，宿主打
+`Script data fetch refused by the host's allowlist`，`wx_geocode` 拿到空串，
+天气永远停在旧城市 —— **静默失败，用户看不出原因**。
+
+⇒ 因此**静态门禁不能纯字符串匹配域↔源码**，必须是「域 ↔ 宿主内建能力映射表」。
 **禁止**任何其它网络调用、CDN 素材或遥测——评价、选图都会引向失败。素材一律打进
 `bundle/`，宿主不会远程加载。
 

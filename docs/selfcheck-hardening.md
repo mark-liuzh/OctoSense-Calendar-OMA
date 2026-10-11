@@ -269,15 +269,42 @@ tools/run_all.sh: line 118: syntax error near unexpected token `fi'
 
 ---
 
-## 9. 本轮的自检结果
+## 9. 自检结果（持续更新，以最后一次实跑为准）
+
+> 判据只有一条：**以最近一次真实跑出来的数字为准**，不抄上一轮的。
+> 这一节原先停在「静态门禁 6/6、端到端 6/6」（v0.4.0 时的实况），
+> 后来流程加了、门禁也加了，数字却没跟 —— 读者会以为那就是当前基线。
+> 历史数字一律不再保留：它们描述的是**已经不存在的门禁集合**。
+
+### 当前基线（v0.5.2，2026-10-11 实跑）
 
 ```
-静态门禁      6/6 PASS（brace / quotes / toplevel / deps / paintfix / btnfocus）
-端到端流程    6/6 exit=0，编译/运行错误数全 0
-  run_festival  51 项断言全过（含 12 项像素级颜色判定）
-  run_layout    12 个界面状态，几何异常 0
-octo check    PASSED
-hub check     PASSED（--allow-unsigned；唯一 warning 是「未签名」，符合预期）
-脚本语法      8 个 shell + 13 个 python 全部 OK
-listing.json  subtitle / description / keywords / screenshots 全在限内
+静态门禁      12 道全过
+              brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover /
+              fncalls / ai_gates / host_errors / portability / shellsafe / writepoint
+              （其中 ai_gates 与 host_errors、portability、shellsafe、writepoint
+                是纯 Python 夹具，秒级、不起宿主）
+端到端流程    8/8 exit=0，8 条流程全部打出「编译/运行错误数: 0」
+  run_conflict  21 条断言（含「重叠 30 分钟」量化冲突与往返 0/0/N）
+  run_festival  58 项断言（含像素级颜色判定）
+  run_new       31 条断言（点格子写日程 / 重复规则 / 往返）
+  run_layout    21 个界面状态的几何扫描，异常 0
+脚本语法      shell 与 python 全部 OK
 ```
+
+### 三个夹具各自守什么（新增的，容易被当成「又加了几个脚本」）
+
+| 门禁 | 守的不变量 | 放行的后果 |
+| --- | --- | --- |
+| `ai_gates` | AI 改期七道闸的 13 条拒绝理由与 bundle 逐字一致 | 夹具与实现漂移 ⇒ 验的是另一套规则（假绿） |
+| `host_errors` | 错误数白名单不得误扣**真的**应用错误 | 「编译/运行错误数 = 0」失真，回归全绿但产品有错 |
+| `portability` | 脚本里不许写死本机路径 | 换机器/换人后一条根因被放大成 8~10 条假 FAIL |
+| `shellsafe` | `$变量` 后面不许紧跟全角标点 | bash 3.2 吞掉多字节首字节 ⇒ `unbound variable`，且崩在错误检查那一步 |
+| `writepoint` | `reschedule()` 是唯一写入点且必须递增 SEQUENCE + 刷新 DTSTAMP | 别的日历软件会认为「这条没被改过」而静默丢弃改期结果 |
+
+### 退出码三态（2026-10-11 起）
+
+`0` 通过 · `1` 应用断言失败 · `2` **前置/夹具/环境失败**。
+`run_all.sh` 的汇总按这两类分开报「应用/断言失败（结论有效）」与
+「前置/夹具失败（不作应用结论）」—— 只有 0/1 时，「脚本找不到工具」与
+「应用冲突检测坏了」在汇总里长得一模一样。

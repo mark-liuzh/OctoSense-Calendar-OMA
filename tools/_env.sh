@@ -156,9 +156,19 @@ static_gate() {
     printf '%s\n' "$out" | tail -20 >&2
     rc=1
   fi
+  # ★ 2026-10-11（v0.5.2 W2-1）：唯一写入点门禁。
+  #   v0.5.1 的 reschedule() 原样透传 `e.sequence` ⇒ 改期多少次序号都不变。
+  #   宿主不报错、界面正常，但标准日历客户端按 RFC 5545 §3.8.7.4 会认为
+  #   「这条从没被改过」而**静默丢弃**改期结果 —— 只有把导出件拿给别的
+  #   日历软件才知道错了。这类缺陷只能静态拦。
+  if ! out=$("$PY" "$ROOT/tools/writepoint.py" "$f" 2>&1); then
+    echo "FATAL: 唯一写入点门禁 tools/writepoint.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
   # ⚠️ 退出码 2 = 前置/夹具失败（不是应用断言失败），run_all.sh 据此分两类汇总。
   [ "$rc" = "0" ] || exit 2
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates / host_errors / portability / shellsafe 全过"
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates / host_errors / portability / shellsafe / writepoint 全过（13 道）"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────

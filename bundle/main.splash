@@ -420,6 +420,11 @@ let updated = 0
 let skipped = 0
 let errors = []
 let import_text = ""   // 待导入的 ICS 文本（从输入框粘）
+// ★ 2026-10-11（W3-1）：**上一次写入**带进来的未知属性名集合（首尾空格包裹）。
+//   为什么单独存：confirm_import() 写完就把 merged 清空了，而导入面板的提示行
+//   要从这份清单生成 ⇒ 不转存的话，用户写完再打开面板就看不到「已原样保留」。
+//   换 ICS / 清空事件库时一并清掉（见 clear_all / start_import）。
+let last_extra_kinds = ""
 let chunk = {}         // 分块解析状态
 
 // 节日来源：0 = 仅中国 · 1 = 仅国际 · 2 = 全部。默认只看中国（法定假期直接影响
@@ -822,6 +827,29 @@ fn split_property(line) {
 }
 
 
+// ── W3-1：未知属性的留存辅助（2026-10-11）────────────────────────────
+// 两处都要用（parse 的容器分支与属性分支），所以收成函数 ——
+// Splash 里 `events[k].extra` 这类**对象字段整体赋值**不可靠（见 reschedule 的注释），
+// 只能用局部变量接住再写回去，两处各写一遍迟早漂移。
+
+// 往 extra 追加一行原文。空串是「还没有任何 extra」的唯一表示。
+// ⚠️ 分隔符必须与 export_ics 的 `e.extra.split("\n")` 完全一致：
+//   Splash 的 `"\n"` 是真实换行符（对照 `carry.lines = t.split("\n")`）。
+fn add_extra_line(cur_extra, line) {
+    if cur_extra == "" { return line }
+    return cur_extra + "\n" + line
+}
+
+// 往 extra_kinds 追加一个属性名（首尾空格包裹，便于用 search 去重判断）。
+// ⚠️ 为什么两端补空格：直接 search(key) 会把「TRIGGER」命中「TRIGGER-ALARM」这类
+//   前缀重叠的名字，导致去重失效、计数虚高。
+fn add_extra_kind(kinds, key) {
+    if kinds.search(" " + key + " ") >= 0 { return kinds }
+    if kinds == "" { return " " + key + " " }
+    return kinds + key + " "
+}
+
+
 fn new_event() {
     return { uid: "", summary: "", dtstart: "", dtend: "", location: "",
              description: "", organizer: "", status: "", sequence: 0,
@@ -839,6 +867,20 @@ fn new_event() {
              // ⚠️ 没有获取「当前时间」的能力，所以**不编造**：输入里有就原样写回，
              //    没有就不写 —— 凭空造一个时刻比缺字段更糟。
              dtstamp: "",
+             // ★ 2026-10-11（v0.5.2 W3-1）：本应用不认识的属性**原样留存**。
+              //   VALARM / ATTENDEE / CATEGORIES / CLASS / TRANSP / GEO /
+             //   PRIORITY / CREATED / LAST-MODIFIED / RECURRENCE-ID /
+             //   X-* 自定义扩展等。此前它们走不到任何 else if 分支 ⇒
+            //   **静默丢弃**：用户粘一份带提醒的日历进来，导出后提醒没了，
+             //   而界面上一个字都没说 —— 往返在「字段级」上是丢数据的。
+             //   现在：解析时按原样存进这个字符串（多行用 "\\n" 分隔），
+             //   导出时原样写回，界面上只做「本次忽略了 N 个属性」的提示。
+             //   ⚠️ 存的是**整行原文**（含属性名与参数），不做解析 ——
+             //      参数里可能有我们不认识的写法，一解析就可能改写它，
+             //      那比丢弃更坏（改写 = 篡改用户数据）。
+             extra: "",
+             // extra 里涉及了几种不同的属性名（用于界面提示，只统计不展示内容）。
+             extra_kinds: "",
              start_minutes: -1, end_minutes: -1 }
 }
 
@@ -855,6 +897,12 @@ fn parse_lines(lines, start, end, carry) {
     // 而不是指向 END:VEVENT 那一行 —— 后者是对的但没意义，用户拿着行号回文件里
     // 找，看到的是 END，只会更困惑。
     let begin_line = carry.begin_line
+    // ★ 2026-10-11（W3-1）：容器属性（VALARM 等）的嵌套深度。
+    //   0 = 不在容器里。大于 0 时，当前行属于某个容器，**整行原样收进 extra**，
+    //   不参与属性解析（否则 BEGIN:VALARM 里的 ACTION/TRIGGER 会被当成
+    //   VEVENT 级的未知属性，而包裹它们的 BEGIN/END 两行却被丢掉 ⇒ 导出非法 ICS）。
+    let in_sub = carry.in_sub
+    let sub_name = carry.sub_name
 
     for idx in start..end {
         if idx >= lines.len() { break }
@@ -870,12 +918,29 @@ fn parse_lines(lines, start, end, carry) {
                 in_vevent = true
                 cur = new_event()
                 begin_line = idx + 1
+                in_sub = 0
+            } else if in_vevent && cur != nil {
+                // ★ 2026-10-11（v0.5.2 W3-1）：**容器属性**（VALARM / VJOURNAL /
+                //   VFREEBUSY…）的 BEGIN 行。
+                //   ⚠️ 不这么做会产出**坏的 ICS**：VALARM 内部的 TRIGGER / ACTION
+                //   会被下面的 else 分支当未知属性收进 extra，但 BEGIN:VALARM 与
+                //   END:VALARM 两行被这个分支的 `continue` 吃掉 ⇒ 导出时得到
+                //   「光秃秃的 TRIGGER/ACTION，没有容器包裹」——
+                //   那是**非法 ICS**，别的日历软件直接拒收整个文件。
+                //   比丢掉提醒糟糕得多：丢掉只是少一个功能，非法文件是全盘失效。
+                //   所以这里把整行原样收下，并用 in_sub 记嵌套深度，
+                //   让内部的行也原样收下（深度 > 0 时不再走属性解析）。
+                in_sub = in_sub + 1
+                sub_name = value.trim()
+                cur.extra = add_extra_line(cur.extra, line.trim())
+                cur.extra_kinds = add_extra_kind(cur.extra_kinds, sub_name)
             }
             continue
         }
         if key == "END" {
             if value.trim() == "VEVENT" {
                 in_vevent = false
+                in_sub = 0
                 if cur != nil {
                     if cur.uid == "" {
                         errs.push("第 " + ("" + begin_line) + " 行起的事件缺 UID")
@@ -892,11 +957,30 @@ fn parse_lines(lines, start, end, carry) {
                     }
                 }
                 cur = nil
+            } else if in_sub > 0 {
+                // ★ 2026-10-11（W3-1）：容器的 END 行，与 BEGIN 行成对收进 extra。
+                //   少了它导出的 ICS 就是非法的（见上面 BEGIN 分支的注释）。
+                in_sub = in_sub - 1
+                if in_vevent && cur != nil {
+                    cur.extra = add_extra_line(cur.extra, line.trim())
+                }
             }
             continue
         }
 
         if !in_vevent || cur == nil { continue }
+
+        // ★ 2026-10-11（W3-1）：**在容器里**的行（VALARM 内部的
+        //   TRIGGER / ACTION / DURATION …）整行原样收下，不参与属性解析。
+        //   为什么必须短路到最前面：这些属性名（ACTION、DURATION、TRIGGER）
+        //   在 VEVENT 层面不存在，若继续往下走 else-if 链，
+        //   虽然今天恰好落进 else 分支也是原样存 —— 但一旦将来给某个
+        //   容器属性名加了个 VEVENT 级分支（比如 ACTION），就会在容器内部
+        //   被误解析并写进事件字段。显式短路把这件事从根上堵住。
+        if in_sub > 0 {
+            cur.extra = add_extra_line(cur.extra, line.trim())
+            continue
+        }
 
         if key == "UID" {
             cur.uid = value.trim()
@@ -945,11 +1029,34 @@ fn parse_lines(lines, start, end, carry) {
             }
         } else if key == "DTSTAMP" {
             cur.dtstamp = value.trim()
+        } else {
+            // ★ 2026-10-11（v0.5.2 W3-1）：走到这里 = 本应用不认识这个属性。
+            //   原样存整行（不含换行符，多行以 "\n" 分隔），导出时原样写回。
+            //   ⚠️ 必须存**原文**而不是拼 `key + ":" + value`：
+            //      属性名可能带参数（`;VALUE=DATE`、`;TZID=Asia/Shanghai`、
+            //      `;MEMBER="mailto:a@b"`），`split_property` 已经把参数
+            //      归到 key 里了，重新拼回去虽然多数情况等价，
+            //      但遇到引号内含分号的值就会拆错位 —— 而拆错位 = 改写用户数据。
+            //      直接留整行最省事也最忠实。
+            // ⚠️ VTIMEZONE 区块的内容也在这个分支里被收下（key 是 TZOFFSETFROM
+            //   / TZOFFSETTO / TZNAME / DTSTART…）。它们不在任何 VEVENT 的语义
+            //   范围内，但**存下来无害**（导出时写回）—— 本应用不做时区换算，
+            //   所以这些行对它是惰性的。真正的做法见 W3-2：界面上如实写明
+            //   「当前不做跨时区换算」。
+            // ⚠️ 换行分隔符必须与导出侧 `e.extra.split("\n")` **完全一致**。
+            //   Splash 的 `"\n"` 是**真实换行符**（对照 `carry.lines = t.split("\n")`
+            //   就能看出），所以这里也用 `"\n"`；写成 `"\\n"`（字面两字符）
+            //   会存进「a\nb」这种两字符串，而导出侧按真实换行拆**永远拆不开** ⇒
+            //   多条未知属性会被当成一整行输出，产出的 ICS 是坏的。
+            if key != "" {
+                cur.extra = add_extra_line(cur.extra, line.trim())
+                cur.extra_kinds = add_extra_kind(cur.extra_kinds, key)
+            }
         }
     }
 
     return { events: evs, errors: errs, cur: cur, in_vevent: in_vevent,
-             begin_line: begin_line }
+             begin_line: begin_line, in_sub: in_sub, sub_name: sub_name }
 }
 
 
@@ -959,8 +1066,14 @@ fn parse_lines(lines, start, end, carry) {
 //    （实测：回调抛错后，再点正常按钮也不再更新全局变量）。
 //    所以这里的铁律是「绝不抛错」，所有状态字段一律预先声明。
 fn new_carry() {
+    // ★ 2026-10-11（W3-1）：in_sub / sub_name 是容器属性（VALARM 等）的
+    //   嵌套状态，必须在 carry 里跟着跨块传递 —— 解析是**分块续跑**的
+    //   （单 handler 200000 指令 / 64ms 双限），BEGIN:VALARM 与 END:VALARM
+    //   完全可能落在两个不同的块里。不带上的话，跨块的那个 END 会被丢掉
+    //   ⇒ 导出非法的 ICS（症状极隐蔽：只在文件很大时才出现）。
     return { started: false, lines: [], cursor: 0, events: [], errors: [],
              cur: nil, in_vevent: false, begin_line: 0,
+             in_sub: 0, sub_name: "",
              done: false, progress: 0.0 }
 }
 
@@ -980,6 +1093,12 @@ fn parse_all(text) {
     carry.cur = r.cur
     carry.in_vevent = r.in_vevent
     carry.begin_line = r.begin_line
+    // ★ 2026-10-11（W3-1）：容器嵌套状态也要带回来。
+    //   漏了它的话，若文件末尾有个没闭合的 BEGIN:VALARM，
+    //   「未闭合」检测会误报到 VEVENT 上（它检测的是 carry.cur != nil），
+    //   而实际未闭合的是一个提醒 —— 报错指向错的行，用户查半天找不到。
+    carry.in_sub = r.in_sub
+    carry.sub_name = r.sub_name
     carry.cursor = carry.lines.len()
     carry.done = true
     carry.progress = 1.0
@@ -1300,11 +1419,30 @@ fn build_advice(conflicts, list) {
         let c = conflicts[i]
         let a = list[c.a]
         let b = list[c.b]
+        // ★ 2026-10-11（v0.5.2 W2-2）：**全天事件的门**。
+        //   为什么必须在这里挡：`reschedule()` 第一行就是 `if e.all_day { return 0 }`
+        //   —— 全天事件根本改不了。但原来 `build_advice()` 不看 all_day，照样会
+        //   给它算出「移到当天 09:00-21:00」的建议；用户点「采纳」后
+        //   `reschedule()` 静默返回 0 ⇒ **界面毫无反应**（像按钮坏了）。
+        //   量纲也不匹配：全天是 1440 分钟，`propose_slot` 只在 09:00-21:00
+        //   （720 分钟）里找空档，必然找不到 → 恒产出 `has_slot: false`
+        //   的空建议。
+        //   两种情形分别处理：
+        //     · 两侧都全天  → 全天块之间「重叠」本身就没有意义
+        //                      （都是整天占着，不存在改期解法），直接跳过；
+        //     · 一侧全天    → **只以定时的那一方为 mover**，全天那侧永远是 keeper。
+        //                      原来靠 commitment_weight 决定，但两个全天的权重可能
+        //                      与定时方相同，会误判成「移动全天事件」⇒ 又是空建议。
+        let a_all = a.all_day
+        let b_all = b.all_day
+        if a_all && b_all { continue }
         let wa = commitment_weight(a)
         let wb = commitment_weight(b)
 
         let move_a = false
-        if wa < wb { move_a = true }
+        if a_all { move_a = false }
+        else if b_all { move_a = true }
+        else if wa < wb { move_a = true }
         else if wa == wb && abs_start(a) > abs_start(b) { move_a = true }
         else if wa == wb && abs_start(a) == abs_start(b) && c.a > c.b { move_a = true }
 
@@ -1315,11 +1453,23 @@ fn build_advice(conflicts, list) {
         let dur = abs_end(mover) - abs_start(mover)
         let slot = propose_slot(mover, list, dur)
 
+        // ★ 2026-10-11（v0.5.2 W2-2）：一侧全天时**必须换一套文案**。
+        //   `propose_slot` 只在当天 09:00–21:00（720 分钟）里找空档，
+        //   而全天事件占满 1440 分钟 ⇒ 只要当天还有一条全天日程，
+        //   09:00–21:00 的任何候选段都与之重叠 ⇒ **恒 clash、恒 nil**。
+        //   原来这一档也写「当天 09:00-21:00 已无可放空档」，把用户引向
+        //   「缩短时长」这个**做不到**的方向（缩短全天日程等于改它的日期）。
+        //   正确的话是「那天整天被全天日程占着」—— 换日，不要缩时长。
+        let all_day_block = false
+        if keeper.all_day { all_day_block = true }
+
         let has_slot = slot != nil
         let s0 = -1
         let s1 = -1
         let why = "当天 09:00-21:00 已无可放空档，建议改日或缩短时长"
-        if has_slot {
+        if all_day_block {
+            why = "当天有全天日程占着整天，建议改到另一天"
+        } else if has_slot {
             s0 = slot.start
             s1 = slot.end
             why = "移到当天 " + pretty_time(s0) + "-" + pretty_time(s1) + " 的空档"
@@ -1585,7 +1735,16 @@ fn ask_model() {
             ai_state = 3
             ai_plan = nil
             ai_why = ""
-            ai_reject = "模型不可用（" + r.error + "）"
+            // ★ 2026-10-11（v0.5.2 W2-3）：界面**不显示** r.error 原文。
+            //   原来这里是 `"模型不可用（" + r.error + "）"` —— 把宿主/模型服务
+            //   的原始错误串直入用户可见文案。风险有三层：
+            //     ① 对用户无意义：「no registered model service」「timeout」这类
+            //        字符串用户读不懂也不知道该做什么；
+            //     ② 可能泄露内部细节（服务地址、鉴权失败原因、模型名）；
+            //     ③ 文案长度不可控 —— 换个错误就是「换一句文案」，
+            //        而单行 Label 多 6 个字就换行，后面全被裁（本项目反复踩）。
+            //   现在：界面只显示四类友好文案，原始串由宿主日志留痕（不外泄）。
+            ai_reject = "模型不可用（" + model_err_text(r.error) + "）"
             set_status_warn("模型不可用 · 规则建议照常可用")
             sync_conflict()
             return
@@ -1707,6 +1866,21 @@ fn export_ics(list) {    let out = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//
         }
         if e.status != "" { out = out + "STATUS:" + e.status + "\r\n" }
         out = out + "SEQUENCE:" + ("" + e.sequence) + "\r\n"
+        // ★ 2026-10-11（v0.5.2 W3-1）：把不认识但**留存**的属性原样写回。
+        //   没有这一步，extra 只是「存了没人要」—— 用户粘一份带提醒的日历进来、
+        //   导出后提醒没了，字段级往返仍然在丢数据，与 v0.5.1 之前无区别。
+        //   ⚠️ 放在 SEQUENCE 之后、END:VEVENT 之前：RFC 5545 不要求属性有序，
+        //      但 VTIMEZONE 之类容器属性若在 extra 里（见 parse 的 else 分支注释），
+        //      写在这里能保证它们仍落在 VEVENT 内部而不会跑到外面去。
+        //   ⚠️ 不走 fold_line：这些行是**原文**，折行会改变语义
+        //      （RFC 的折行在续行开头要加一个空格）。
+        if e.extra != "" {
+            for x in e.extra.split("\n") {
+                if x.trim() != "" {
+                    out = out + x + "\r\n"
+                }
+            }
+        }
         out = out + "END:VEVENT\r\n"
     }
     out = out + "END:VCALENDAR\r\n"
@@ -2143,6 +2317,29 @@ fn load() {
         if v != nil {
             events = v
             n = v.len()
+            // ★ 2026-10-11（W3-1 实测真回归）：**存量数据补齐新字段**。
+            //   W3-1 给事件加了 `extra` / `extra_kinds` 两个字段，但用户本机上
+            //   已有的 `events.json` 是**旧版本写的、根本没有这两个键**。
+            //   Splash 读一个从没写过的键会抛 `property extra not found in
+            //   prototype chain`，而更要命的是：抛错之后**该实例的后续写操作
+            //   全部静默失效**（见 reschedule 的注释）⇒ 一个旧事件能让整条
+            //   导出链路当场哑掉，而宿主只在日志里留一行 `[E]`。
+            //   症状实测：`run_conflict` 的 9 条红全部由此而来（导出拿不到内容、
+            //   往返统计为空、回滚按钮找不到），而界面看着完全正常。
+            //
+            //   ⚠️⚠️ 修法必须是「整体重建对象」，**不能**先探测再补 ——
+            //      `events[i].extra_kinds == ""` 这个探测本身就会抛，
+            //      抛完该实例就废了，等于没修。
+            //      而且重建时**必须列全所有字段**（reschedule 的注释已记录
+            //      同一个坑：漏一个键，之后读它照样抛）。
+            //   ⚠️ 这是全项目第二处 `events[k] = {…}` 重建 —— 与 reschedule 的
+            //      「唯一写入点」并不冲突：那一处管的是**改期**（写回业务字段），
+            //      这里管的是**读回时的结构补齐**（不改业务值）。两者都在
+            //      这里显式列出完整字段表，将来加字段要同时改两处，
+            //      所以 writepoint 门禁只约束 reschedule 那处的递增语义。
+            for i in events.len() {
+                events[i] = with_extra(events[i], "", "")
+            }
         }
     }
     // 初值：三个面板收起；月历/指标/节日行按规则可见。
@@ -2207,6 +2404,15 @@ fn confirm_import() {
     events = merged
     save()
     ui.entry.set_text("")
+    // ★ 2026-10-11（W3-1）：`merged` 在下一行被清空，而导入面板的提示行
+    //   （import_hint）正是从 `merged` 取「未识别属性」清单的 ⇒ 写入完成后
+    //   再打开面板，那句「已原样保留」就没了。
+    //   为什么要在**写入前**把清单转存：用户点「写入」时是最后一眼确认的机会，
+    //   之后就只能靠记忆；而「我的提醒还在吗」恰好是最该事后可查的一件事。
+    //   存在 last_extra_kinds 而不是从 events 反扫 —— 后者要在每次渲染时
+    //   遍历全部事件取字段，而 extra_kinds 只在**属性名集合**层面有意义，
+    //   从 events 反扫的结果会随事件增删变化，反而不如「这次导入带进来什么」准确。
+    last_extra_kinds = kinds_of(merged)
     merged = []
     // 写入完成 → 收起导入面板，让主列表立刻显示刚写进去的事件
     import_open = false
@@ -2261,6 +2467,91 @@ fn rescan_ui() {
 //   ② 带 RRULE 的事件不动 —— 屏幕上只有首个实例，底下是整条重复序列；
 //   ③ 原 DTSTART 的 `Z` 后缀必须保留 —— 丢了就变成「浮动时间」，
 //      与 SEQUENCE / 时区语义不符。
+// 当前时刻的 DTSTAMP 值（RFC 5545 的 DATE-TIME 形式 `YYYYMMDDTHHMMSSZ`）。
+// ★ 2026-10-11（v0.5.2 W2-1）：reschedule 改期时必须刷新 DTSTAMP。
+//   RFC 5545 §3.8.7.2：DTSTAMP 是「这条 VEVENT 最后一次被修订的时间」，
+//   与 SEQUENCE 配对使用（§3.8.7.4：序号变了 ⇒ DTSTAMP 必须更新）。
+//   只递增 SEQUENCE 不动 DTSTAMP，等于对外说「我改过了」却不给时间，
+//   订阅方无法判断该用哪一版。
+// ⚠️ 为什么带 Z 后缀：宿主没有时区数据库（`timer.rs:70` 注释原文：
+//    "The platform has no timezone database"），local_time 返回的是**本地钟面时间**。
+//    把它标成 Z（UTC）严格说是错的，标成 TZID 又无处可指。
+//    折中：按 RFC 的「DATE-TIME 必须带时区指示符」要求写 Z，
+//    它在**同一台机器**上单调递增、够用；本应用不做跨机同步，不受时差影响。
+fn now_dtstamp() {
+    let t = local_time(time_now())
+    let y = 2026
+    let mo = 1
+    let d = 1
+    let h = 0
+    let mi = 0
+    let se = 0
+    if t.year >= 2000 { y = t.year }
+    if t.month >= 1 && t.month <= 12 { mo = t.month }
+    if t.day >= 1 && t.day <= 31 { d = t.day }
+    if t.hour >= 0 && t.hour <= 23 { h = t.hour }
+    if t.minute >= 0 && t.minute <= 59 { mi = t.minute }
+    if t.second >= 0 && t.second <= 59 { se = t.second }
+    return (pad8(y, mo, d) + "T" + pad2(h) + pad2(mi) + pad2(se) + "Z")
+}
+
+
+// 把模型服务的原始错误串映射成四类友好文案（2026-10-11 · v0.5.2 W2-3）。
+// ⚠️ 只做**分类**，不把原文带给界面。原文仍会进宿主日志（`host_error`），
+//    需要排障时看日志，不要为了排障方便把内部错误直接糊在用户脸上。
+// ⚠️ 判定一律用 `s.search(x) >= 0`（与 commitment_weight 同款写法）：
+//    Splash 没有 `contains()`。
+// ⚠️ 匹配用**小写无关**做不到，所以下面每类都列多个可能写法，
+//    且**长串在前**（"not authorized" 必须在 "unauthorized" 之前判）。
+// ⚠️ 兜底那档刻意说得含糊：真遇到没归类的错误时，
+//    说「暂不可用，请稍后再试」比编一个具体原因诚实。
+fn model_err_text(err) {
+    let s = "" + err
+    if s.search("not authorized") >= 0 { return "未授权" }
+    if s.search("unauthorized") >= 0 { return "未授权" }
+    if s.search("forbidden") >= 0 { return "未授权" }
+    if s.search("permission") >= 0 { return "未授权" }
+    if s.search("timeout") >= 0 { return "响应超时" }
+    if s.search("timed out") >= 0 { return "响应超时" }
+    if s.search("deadline") >= 0 { return "响应超时" }
+    if s.search("no registered") >= 0 { return "服务未就绪" }
+    if s.search("not registered") >= 0 { return "服务未就绪" }
+    if s.search("no model") >= 0 { return "服务未就绪" }
+    if s.search("not available") >= 0 { return "服务未就绪" }
+    if s.search("unavailable") >= 0 { return "服务未就绪" }
+    if s.search("connection") >= 0 { return "网络不可用" }
+    if s.search("network") >= 0 { return "网络不可用" }
+    if s.search("connect") >= 0 { return "网络不可用" }
+    if s.search("dns") >= 0 { return "网络不可用" }
+    if s.search("refused") >= 0 { return "网络不可用" }
+    return "暂不可用，请稍后再试"
+}
+
+
+// 给事件补上 W3-1 的两个新字段，返回**重建后**的新对象。
+// ⚠️⚠️ `extra` / `extra_kinds` 一律走**参数**传入，**绝不从 `e` 上读** ——
+//   参数正是为了绕开那个陷阱：从旧 `events.json` 读回来的对象根本没有这两个键，
+//   `e.extra` 会抛 `property not found in prototype chain`，而抛错之后
+//   **该实例的后续写操作全部静默失效** ⇒ 补齐反而成了破坏。
+//   （load() 的调用点因此只能传空串：旧数据里的未知属性早就被旧版本丢掉了，
+//    那里本来就取不回来，这不是损失。）
+// ⚠️ 必须**列全所有字段**：漏一个键，将来读它照样抛 ——
+//   reschedule 的注释已记录过同一个坑（漏 start_utc 的后果）。
+fn with_extra(e, x, k) {
+    return {
+        uid: e.uid, summary: e.summary,
+        dtstart: e.dtstart, dtend: e.dtend,
+        location: e.location, description: e.description,
+        organizer: e.organizer, status: e.status, sequence: e.sequence,
+        rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
+        dtstamp: e.dtstamp,
+        all_day: e.all_day, start_utc: e.start_utc, timezone: e.timezone,
+        start_minutes: e.start_minutes, end_minutes: e.end_minutes,
+        extra: x, extra_kinds: k
+    }
+}
+
+
 fn reschedule(uid, day, slot_start, slot_end) {
     for k in events.len() {
         if events[k].uid != uid { continue }
@@ -2281,10 +2572,30 @@ fn reschedule(uid, day, slot_start, slot_end) {
             dtstart: day + "T" + clock_compact(slot_start) + "00" + sfx,
             dtend: day + "T" + clock_compact(slot_end) + "00" + sfx,
             location: e.location, description: e.description,
-            organizer: e.organizer, status: e.status, sequence: e.sequence,
+            // ★ 2026-10-11（v0.5.2 W2-1）：**改期必须递增 SEQUENCE**。
+            //   RFC 5545 §3.8.7.4：SEQUENCE 是「这条事件被修订的次数」，
+            //   每次实质修改 +1，订阅方据此发现「我这边的版本过时了」。
+            //   原来这里是 `e.sequence` 原样透传 ⇒ 改期多少次都是同一个序号，
+            //   任何日历客户端都会认为「这条没被改过」，静默丢弃我们的改动。
+            //   ⚠️ 解析时的默认值是 0（`cur.sequence = …` 见 parse 分支），
+            //      所以「导出后再导入」看到的就是 0；递增后第一次改期得到 1。
+            //   ⚠️ 守恒性提醒：本函数是**唯一写入点**（规则引擎与模型共用），
+            //      在这里加字段就够了 —— 任何地方再写一遍 `events[k] = {...}`
+            //      就会漂移。见 AGENTS.md 硬性要求第 5 条。
+            organizer: e.organizer, status: e.status,
+            //   ⚠️ `sequence` 在解析分支就是 f64（`cur.sequence = n`，n 来自
+            //      `to_f64()`），所以 `e.sequence + 1` 已是 f64，**不要再 to_f64()**
+            //      —— 那在 Splash 里对 number 会抛「property not found」。
+            sequence: e.sequence + 1,
             rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
-            dtstamp: e.dtstamp,
+            // ★ 同上（§3.8.7.2）：DTSTAMP 与 SEQUENCE **必须成对更新**。
+            dtstamp: now_dtstamp(),
             all_day: false, start_utc: e.start_utc, timezone: e.timezone,
+            // ★ 2026-10-11（W3-1）：**必须原样带上 extra / extra_kinds**。
+            //   这个对象是「整体替换」而不是逐字段赋值，漏掉的字段等于被清空。
+            //   漏了它的后果很隐蔽：改一次期，这条事件的提醒 / 分类 / 参会人
+            //   就永久没了，而界面不报错、导出看着也正常（只是少了那几行）。
+            extra: e.extra, extra_kinds: e.extra_kinds,
             start_minutes: slot_start, end_minutes: slot_end
         }
         return 1
@@ -2296,7 +2607,16 @@ fn reschedule(uid, day, slot_start, slot_end) {
 // 一键应用建议：把建议里的「可动方」移到提议的空档
 fn apply_advice() {
     if advice.len() == 0 {
-        set_status("当前没有待处理的冲突")
+        // ★ 2026-10-11（v0.5.2 W2-2）：把「为什么没建议」说清楚。
+        //   `build_advice()` 现在会跳过全天×全天的冲突（没有改期解法），
+        //   于是这里 `advice.len() == 0` 但 `conflicts.len() > 0` 是**常态**。
+        //   原来一律报「当前没有待处理的冲突」—— 与界面上明明显示着冲突条
+        //   直接矛盾，用户会以为检测错了。
+        if conflicts.len() > 0 {
+            set_status("冲突都在全天日程之间，无法改期（全天事件不参与自动改期）")
+        } else {
+            set_status("当前没有待处理的冲突")
+        }
         return
     }
     let applied = 0
@@ -2418,6 +2738,9 @@ fn start_import() {
     import_text = text
     chunk = c
     errors = c.errors
+    // ★ 2026-10-11（W3-1）：重新解析就清掉上一次的清单 ——
+    //   用户换了一份 ICS，面板上却挂着**上一份**的「未识别 N 类」，会误导。
+    last_extra_kinds = ""
 
     if incoming.len() == 0 {
         set_status_warn("没有解析出任何事件" + err_msg())
@@ -2442,9 +2765,116 @@ fn start_import() {
             + ("" + skipped) + err_msg())
     } else {
         set_status("解析 " + ("" + incoming.len()) + " 个：新增 " + ("" + added)
-            + " / 改期 " + ("" + updated) + " / 跳过 " + ("" + skipped))
+            + " / 改期 " + ("" + updated) + " / 跳过 " + ("" + skipped)
+            + extra_note(incoming))
     }
     refresh_all()
+}
+
+
+// ★ 2026-10-11（v0.5.2 W3-1）：导入完成后如实告诉用户「哪些属性本应用用不上」。
+//   ⚠️ 文案纪律：**不渲染进主状态条**。状态条一行放不下（多 6 个字就换行，
+//      后面全被裁 —— 本项目反复踩），所以只在这里返回后缀，
+//      且压到**只报类数、不报类名**：「+ 3 类未识别属性已原样保留」= 14 字，
+//      挤爆的概率低；把 VALARM/ATTENDEE/CATEGORIES 全列出来必然换行。
+//   ⚠️ 用「**原样保留**」而不是「忽略」：用户的要求是「导出时一同导出原数据，
+//      只是不显示，而不是直接丢弃」—— 本函数报的是「不显示」，不是「丢了」。
+//   类名清单放在导入面板里另有一行可查（见 sync_import_hint），这里不重复。
+fn extra_note(list) {
+    let n = extra_kind_count(kinds_of(list))
+    if n <= 0 { return "" }
+    return " · " + ("" + n) + " 类属性未识别（已原样保留，导出时写回）"
+}
+
+
+// extra_kinds 形如 " VALARM CATEGORIES ATTENDEE "（首尾各一个空格），
+// 数「类」就是数空格分隔的段数。
+fn extra_kind_count(kinds) {
+    if kinds == "" { return 0 }
+    let parts = kinds.trim().split(" ")
+    let n = 0
+    for i in parts.len() {
+        if parts[i] != "" { n = n + 1 }
+    }
+    return n
+}
+
+
+// 导入面板那一行的动态文案：本次未识别了哪些属性。
+// ⚠️⚠️ **必须严格限长**。这一行可用宽 ≈372px、字号 11（font_regular ≈0.9em），
+//   实测「粘贴 .ics 内容 · 重复日程只显示首个实例」≈319px 安全 ⇒ 预算约 22 个汉字。
+//   而这一行的 Label 一旦换行，**变高的部分会把下面的 TextInput 压扁**
+//   （面板高度是写死的 204.0）—— 症状是「输入框变矮了 / 按钮被顶出去」，
+//   看起来像布局回归，而不是文案问题。
+//   ⇒ 只列**前 3 个**属性名，多的用「等 N 类」概括。
+// ⚠️ 用「保留」不用「丢弃」/「忽略」：用户要的是「导出时写回、只是不显示」，
+//   而这两个词在中文里明确指向「没了」。
+fn extra_hint(kinds) {
+    let n = extra_kind_count(kinds)
+    if n <= 0 { return "粘贴 .ics 内容 · 重复日程只显示首个实例" }
+
+    // 只列**有中文短名**的，最多 3 个；其余用「等 N 类」概括。
+    // ⚠️⚠️ 为什么必须用中文短名而不是属性名原文（2026-10-11 实测）：
+    //    第一版写的是「上次导入有 11 类属性未识别（CATEGORIES、CLASS、TRANSP 等），
+    //    已原样保留」，快照实测 `import_hint r=[23,273,389,24]` ——
+    //    **389px > 面板可用宽 372px**（412 - 左右各 20 padding）。
+    //    Label 是 width: Fill，它**不会换行、只会溢出裁剪** ⇒ 尾巴上的
+    //    「已原样保留」正是最该让用户看到的那半句，反而被裁掉了。
+    //    换成中文短名后整句 ≈220px，留足余量。
+    //    ⚠️ 另一个副作用：中文短名对用户**更有用** ——
+    //    「提醒 / 分类 / 参会人」比「VALARM / CATEGORIES / ATTENDEE」好懂得多。
+    let names = ""
+    let shown = 0
+    for x in kinds.trim().split(" ") {
+        if x == "" { continue }
+        let zh = extra_kind_zh(x)
+        if zh == "" { continue }
+        if shown < 3 {
+            if names == "" { names = zh } else { names = names + "、" + zh }
+            shown = shown + 1
+        }
+    }
+    if names == "" {
+        return "上次导入有 " + ("" + n) + " 类属性未识别，已原样保留"
+    }
+    if n > 3 {
+        return "未识别 " + names + " 等 " + ("" + n) + " 类属性，已原样保留"
+    }
+    return "未识别 " + names + " 共 " + ("" + n) + " 类，已原样保留"
+}
+
+
+// 属性名 → 用户看得懂的中文短名。认不出来的返回 ""（不列，不占字数）。
+// ⚠️ 这张表是**按「用户会不会在意」挑的**，不是 RFC 属性的全集：
+//    「提醒 / 分类 / 参会人」直接决定用户的日程体验，值得占文案；
+//    `X-*` 自定义扩展、SEQUENCE 之类的技术属性列出来只会让人困惑。
+fn extra_kind_zh(key) {
+    if key == "VALARM" { return "提醒" }
+    if key == "CATEGORIES" { return "分类" }
+    if key == "ATTENDEE" { return "参会人" }
+    if key == "ORGANIZER" { return "" }          // 已在「已知字段」里，不重复报
+    if key == "GEO" { return "位置" }
+    if key == "PRIORITY" { return "优先级" }
+    if key == "CLASS" { return "公开度" }
+    if key == "TRANSP" { return "占用" }
+    if key == "CREATED" { return "创建时间" }
+    if key == "LAST-MODIFIED" { return "修改时间" }
+    if key == "RECURRENCE-ID" { return "重复例外" }
+    return ""
+}
+
+
+// 收集一批事件的 extra_kinds 并**全局去重**。
+// ⚠️ 必须去重：两个事件都带 VALARM 时，逐个累加会报「2 类」，
+//   而用户视角只有 1 类。
+fn kinds_of(list) {
+    let all = ""
+    for i in list.len() {
+        for x in list[i].extra_kinds.trim().split(" ") {
+            if x != "" { all = add_extra_kind(all, x) }
+        }
+    }
+    return all
 }
 
 
@@ -2452,6 +2882,9 @@ fn clear_all() {
     events = []
     merged = []
     import_text = ""
+    // ★ 2026-10-11（W3-1）：事件库整个清空，那些「已原样保留」的属性也不存在了，
+    //   再挂着提示就是**假的**。必须一起清。
+    last_extra_kinds = ""
     ui.entry.set_text("")
     save()
     set_status_ok("事件库已清空，输入框也一并清掉了")
@@ -2515,11 +2948,24 @@ fn time_range(ev) {
 }
 
 
-// 时区/来源标记："UTC" / "Asia/Shanghai" / 空
+// 时区/来源标记："全天" / "UTC（不做换算）" / "<TZID> 按字面" / "本地"
+// ★ 2026-10-11（v0.5.2 W3-2，用户拍板「选 A：写明限制」）：
+//   本应用**不做跨时区换算**，时间一律按 ICS 里的字面值使用。
+//   宿主也没有时区库（platform/src/script/timer.rs:70 原文：
+//   "The platform has no timezone database"），所以这不是「懒得做」而是
+//   「拿不到做所需的权威数据」—— 完整实现要处理 VTIMEZONE 里的
+//   STANDARD/DAYLIGHT 夏令时段，仓促实现半套比不做更危险。
+//   ⇒ 处置：不假装做了，而是**在界面上写明**。
+//   · 带 TZID 的事件：显示「<TZID> 按字面」—— 用户能看出「这条没换算过」。
+//   · UTC 事件：显示「UTC（不做换算）」。
+//   · 本地时间：维持「本地」，它本来就是字面值，没有歧义。
+// ⚠️ 字数纪律：这些串会进事件列表的一行 segs，必须短。
+//   「America/New_York 按字面」= 7+1+3 字符 ≈ 90px，加上「· 」前缀还在预算内；
+//   但**不要**再往这里加解释性长句—— 解释放 README 与关于页。
 fn tz_label(ev) {
     if ev.all_day { return "全天" }
-    if ev.timezone != "" { return ev.timezone }
-    if ev.start_utc { return "UTC" }
+    if ev.timezone != "" { return ev.timezone + " 按字面" }
+    if ev.start_utc { return "UTC 不换算" }
     return "本地"
 }
 
@@ -3266,6 +3712,13 @@ fn sync_panels() {
     ui.grid.set_visible(cal_view == 0)
     ui.cv_week.set_visible(cal_view == 1)
     ui.cv_day.set_visible(cal_view == 2)
+    // ★ 2026-10-11（v0.5.2 W3-1）：导入面板的提示行报「本次未识别哪些属性」。
+    //   放在 sync_panels 而不是 start_import 里，是为了让**重新打开面板**时
+    //   文案回到默认态 —— 否则上一次解析留下的「本次有 3 类…」会挂在面板上，
+    //   而用户这次可能换了一份完全不同的 ICS。
+    //   ⚠️ 清空输入框时（clear_all / cancel_import）也要刷，
+    //   理由同上：残留的文案比没有文案更误导。
+    ui.import_hint.set_text(extra_hint(last_extra_kinds))
 }
 
 
@@ -8111,7 +8564,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             //    实测「粘贴 .ics 内容 · 重复日程只显示首个实例」≈319px，安全。
             //    这里承担「重复日程」的告知职责 —— 状态条是设计稿的单行固定版式，
             //    往上面加字会换行并被容器裁掉（已踩过），所以信息放在导入前。
-            Label{text: "粘贴 .ics 内容 · 重复日程只显示首个实例"
+            //
+            // ★ 2026-10-11（v0.5.2 W3-1）：给了 id，好让它能动态显示
+            //   「本次未识别哪些属性」。⚠️ 文案必须**严格限长**（见
+            //   extra_hint 的实现：最多列 3 个名字 + 「等 N 类」）——
+            //   这一行的字数预算只有 ~50 个字符，超了就是换行 + 压扁输入框。
+            //   换行在这里的表现是**整个面板布局坏掉**，不是「字被裁一点」。
+            import_hint := Label{text: "粘贴 .ics 内容 · 重复日程只显示首个实例"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             entry := TextInput{width: Fill height: 116 empty_text: "BEGIN:VCALENDAR …"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
