@@ -690,9 +690,7 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.2`（**把「静默丢弃」与「静默错算」改成「明说」**：未知属性原样留存、
-改期递增 SEQUENCE、全天事件不再给无效建议、节假日数据收敛到已核实的年份；
-**已知限制**见下方专门一节） |
+| 版本 | `0.5.2`（**把「静默丢弃」与「静默错算」改成「明说」**：未知属性原样留存、改期递增 SEQUENCE、全天事件不再给无效建议、节假日数据收敛到已核实的年份；**已知限制**见下方专门一节） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model`（**不含** `location`） |
 | 发布基准 | GitHub Release [`v0.5.2`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.2)（id 409535893；tag = `main` = `57573c1`；2026-10-11）· digest `767ca5cf7cf06a63…` |
