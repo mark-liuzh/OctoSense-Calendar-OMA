@@ -8780,7 +8780,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             draw_bg +: {color: c_card border_radius: 10.0 border_size: 1.0 border_color: c_line}
             // ⚠️⚠️ 这里原来写死 height: 76.0 / 72.0（2026-10-08 修）——
             //    里面三行 Label（标题 15px + 队伍 12px + 版本 11px）实际需要约 92px，
-            //    写死高度把最后一行「版本 0.5.1 · Apache-2.0」整个裁掉了（/snap 读不到，
+            //    写死高度把最后一行「版本 0.5.2 · Apache-2.0」整个裁掉了（/snap 读不到，
             //    界面上也看不见）。正是 AGENTS.md 记的那条：容器一律 height: Fit。
             // ⚠️⚠️ 但光把 76.0 改成 Fit **不够**（实测右列仍是 r=[118,284,260,72]）：
             //    外层是 `flow: Right`，高度被 Image 的 72px 定死，而 Fit 子节点
@@ -8791,7 +8791,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
-                    Label{width: Fill text: "版本 0.5.1 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                    Label{width: Fill text: "版本 0.5.2 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
                 }
             }
             Hr{draw_bg +: {color: c_line border_size: 0.0 height: 1.0}}
