@@ -3,6 +3,22 @@
 日期：2026-10-11 · 基线：v0.5.1（commit `12a36b8`）
 依据：Linux 全量测试反馈报告 + Windows 11 家庭版测试报告（两份均在 v0.5.1 上执行）
 
+## 发布件
+
+| 项 | 值 |
+|---|---|
+| Commit | `57573c1`（分支 `main`） |
+| Tag | `v0.5.2` |
+| Release | id `409535893` |
+| Zip | `octosense-calendar-0.5.2.zip` · 2,659,789 bytes · sha256 `0432bb12d946f3fe1001c148fdb8ed707f8689f02a6eb7a018dd18ae2c5b4f86` |
+| Bundle blake3 | `767ca5cf7cf06a63c552a771c78426f9aad02d1b4b5b2c1ce80a08ed308f1f19` |
+| Publisher key id | `OMA` |
+| App Hub issue | [#212](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) |
+
+**五处一致性逐处实测通过**：本地工作区 · git `main` · tag 指向的 commit ·
+Release zip 解包件 · 从 Release 下载回来的 zip —— digest 全部一致、
+`diff -r` 无差异、后两者 `hub check` 均 PASSED。
+
 这一版的两个主题：**让静默的地方出声**，以及**让回归结果重新可信**。
 
 ---
