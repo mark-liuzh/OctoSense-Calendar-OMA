@@ -25,6 +25,14 @@ mkdir -p "$EV"
 
 static_gate
 
+# ★ 2026-10-12（v0.5.2 W1-1）：octo CLI 只在**明确指定**时才用。
+#   原来 newflow.py 里写死了 `D:/Projects/OctoScript-App-Design-Flow/tools/octo`
+#   （开发者本机的 Windows 绝对路径），干净克隆上必然 FileNotFoundError。
+#   现在 newflow.py 自己做「环境变量 → 仓库内 tools/octo → PATH」解析，
+#   找不到就直接走宿主远程控制桥抓帧（e2e 走的是同一个 BASE）。
+#   这里只把 OCTO 显式透传，并在非空时打出来 —— 让人一眼看出这条流程用的是哪条通道。
+echo "octo CLI: ${OCTO:-（未指定 → newflow.py 走直连抓帧）}"
+
 echo "=== [1/7] 启动宿主（空事件库）==="
 boot_host "$OUT/run-new.log"
 assert_clean
@@ -32,19 +40,28 @@ echo "宿主就绪  存储目录 $APP_DATA"
 
 echo
 echo "=== [2/7] 交互与选中高亮（A–E）==="
+# ★ 2026-10-12（W1-2）：newflow.py 是后续 [3/7]-[7/7] 的**前置** ——
+#   它不成功，「手工建的事件」根本没进库，后面的导出 / 字段断言 / 往返断言
+#   必然连锁全红（实测崩一次 → 4 条字段 MISS + 往返不幂等 + 找不到「写入」，
+#   一共 8 条红，根因只有 1 条）。
+#   ⚠️ 这里**不能**用 must_drive：newflow 自己的断言失败也是 exit 1，
+#   经must_drive 一律变成 exit 2 就等于把「应用真失败」也洗成「脚本问题」。
+#   所以：亲自跑，区分「崩了/没过」(1) 与其它，一律终止本流程并保留原始退出码语义。
 "$PY" "$ROOT/tools/newflow.py"
 NF=$?
 if [ "$NF" != "0" ]; then
-  echo "  FAIL newflow.py 退出码 $NF"
-else
-  echo "  OK   newflow.py 全部通过"
+  echo "  FAIL newflow.py 退出码 $NF —— 手工事件未建起，后续 [3/7]-[7/7] 全部无意义，终止本流程"
+  kill_host
+  echo "结论：FAIL（前置步骤 newflow.py 失败，后续断言未执行）"
+  exit 1
 fi
+echo "  OK   newflow.py 全部通过"
 
 echo
 echo "=== [3/7] 导出到输入框并落盘（手工建的事件也要能被导出）==="
 # ⚠️ 导入面板此刻是关的，open 一次正好打开（toggle_import 是**切换**，
 #    已经开着时再点会把它关掉 —— run_edge.sh 里记过这个坑）。
-"$PY" tools/e2e.py open >/dev/null 2>&1
+must_drive "打开导入面板（导出）" "$PY" tools/e2e.py open
 "$PY" tools/e2e.py export >/dev/null 2>&1
 "$PY" tools/e2e.py entry "$EV/manual.ics" 2>&1 | tail -4
 
@@ -65,7 +82,7 @@ echo "  字段丢失数: $MISS"
 echo
 echo "=== [5/7] 往返：把导出的 ICS 原样再解析一次 ==="
 echo "（期望 新增 0 / 改期 0 / 跳过 1 —— 手工建的事件与导入的事件走同一套合并逻辑）"
-"$PY" tools/e2e.py fill "$EV/manual.ics" 2>&1 | tail -1
+must_drive "灌回 manual.ics（往返）" "$PY" tools/e2e.py fill "$EV/manual.ics"
 "$PY" tools/e2e.py parse 2>&1 | tee "$OUT/rt-parse.txt" | tail -4
 # ⚠️⚠️ 这三个数是在**点「解析」时**写进状态条的（main.splash 的解析分支：
 #    先 `let r = merge_events(...)` 跑一遍预演，再 `set_status("解析 N 个：新增…")`），

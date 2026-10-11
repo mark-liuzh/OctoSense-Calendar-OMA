@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # OctoSense 实测脚本共用的环境探测。由 run_e2e.sh / run_conflict.sh source。
 #
+# ★★ 退出码约定（2026-10-12 · v0.5.2 W1-2/W1-5）★★
+#   0 = 全部通过
+#   1 = **应用/断言层面失败** —— 有断言真的不通过，结论有效
+#   2 = **前置/夹具/环境失败** —— 断言根本没跑完，**不能据此判断应用好坏**
+#   must_drive / assert_clean / boot_host / static_gate 全部按 2 退出。
+#   为什么必须分开：v0.5.1 及以前只有 0/1，于是「Linux 上找不到 octo CLI」这种
+#   纯脚本缺陷与「应用冲突检测坏了」在汇总里长得一模一样，
+#   读的人只能靠猜 —— 这正是两份测试报告最被误读的地方。
+#
 # 覆盖方式（全部可选）：
 #   PY=<python 可执行文件>        默认自动找 python3 / python
 #   OCTO_CARD_HOST=<card-host>   默认按官方顺序在常见构建目录里找
@@ -17,7 +26,7 @@ fi
 if [ -z "${PY:-}" ]; then
   echo "FATAL: 找不到 python3（脚本用 Python 3.9+，无第三方依赖）。" >&2
   echo "       修法：安装 Python，或 PY=/path/to/python bash tools/run_e2e.sh" >&2
-  exit 1
+  exit 2   # 环境类失败（退出码约定见 run_all.sh 的汇总段）
 fi
 
 # ── card-host（与官方 tools/octo 相同的搜索顺序 + 本仓库的构建目录）──
@@ -98,6 +107,8 @@ CURL="curl -s --noproxy 127.0.0.1 --max-time 20"
 #               静态语法也合法，只有真跑才炸，而且报错离真因隔了三层
 #               （on_render 报错 → 月历空白 → refresh_all 中断 → assert_clean
 #                误报「存储不干净」）。
+#   ai_gates AI 改期七道闸的判定夹具（纯 Python、秒级）
+#   host_errors 错误数口径夹具（白名单不得误扣真错误）
 static_gate() {
   local f="$ROOT/$BUNDLE/main.splash" rc=0 out t
   for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls; do
@@ -118,8 +129,36 @@ static_gate() {
     printf '%s\n' "$out" | tail -20 >&2
     rc=1
   fi
-  [ "$rc" = "0" ] || exit 1
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates 全过"
+  # ★ 2026-10-12（v0.5.2 W1-6）：错误数口径夹具。
+  #   「编译/运行错误数 = 0」是对外验收线，而它藏在 shell 的
+  #   HOST_ERROR_WHITELIST 里 —— 正则一宽，**真错误被静默扣掉**、数字仍显示 0、
+  #   回归全绿。2026-10-08 那条 PulseAudio 白名单就是宽松匹配，已中过一次招。
+  if ! out=$("$PY" "$ROOT/tools/test_host_errors.py" 2>&1); then
+    echo "FATAL: 错误数口径夹具 tools/test_host_errors.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
+  # ★ 2026-10-12（v0.5.2 W1-1）：可移植性门禁。
+  #   v0.5.1 有三个驱动脚本写死了开发者本机的 `D:/Projects/.../tools/octo`，
+  #   而它们的 shot() 又吞异常、不检查退出码 ⇒ 干净克隆上一条根因被放大成
+  #   8~10 条假 FAIL（Linux / Windows 两份测试报告都栽在这）。
+  #   静态拦住比等端到端跑出假红便宜得多。
+  if ! out=$("$PY" "$ROOT/tools/portability.py" 2>&1); then
+    echo "FATAL: 可移植性门禁 tools/portability.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
+  # ★ 2026-10-12（v0.5.2 W1-1）：bash multibyte 陷阱门禁。
+  #   `$NERR2）` 这种写法 `bash -n` 抓不到，只在真正执行那一行时炸 ——
+  #   本轮它把 run_features 的**错误检查那一步**炸掉了，整条流程跑完却没结论。
+  if ! out=$("$PY" "$ROOT/tools/shellsafe.py" 2>&1); then
+    echo "FATAL: shell 变量展开门禁 tools/shellsafe.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
+  # ⚠️ 退出码 2 = 前置/夹具失败（不是应用断言失败），run_all.sh 据此分两类汇总。
+  [ "$rc" = "0" ] || exit 2
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates / host_errors / portability / shellsafe 全过"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
@@ -142,9 +181,12 @@ assert_clean() {
     esac
     sleep 0.7
   done
+  # ⚠️ 退出码 2：这是**前置条件**不满足（上一轮宿主没退干净 / 应用起不来），
+  #   流程里的断言一条都还没跑，run_all.sh 必须把它归到「脚本/环境类」而非
+  #   「应用断言类」—— 2026-10-10 就因为这里报 exit 1 而被误读成「应用崩了」。
   echo "FATAL: 应用存储不干净，预期「已加载 0 个事件」。实际末尾：" >&2
   printf '%s\n' "$t" | tail -2 >&2
-  exit 1
+  exit 2
 }
 
 # ── 宿主日志里的编译/运行错误数 ───────────────────────────────────────
@@ -153,7 +195,7 @@ assert_clean() {
 #    后果有两个：屏幕上多出一个来路不明的 0（看着像别的什么东西坏了），
 #    以及任何 `[ "$n" = "0" ]` 比较都会**假失败**（2026-09-30 踩到）。
 host_error_count() {
-  local n
+  local n hits
   # ⚠️ 不要写 `$(grep -c ... || echo 0)`：grep -c 无匹配时**自己会输出 0**
   #    且退出码为 1，于是 `|| echo 0` 再补一个 0 → 结果是两行 "0\n0"。
   #    后果有两个：屏幕上多出一个来路不明的 0（看着像别的什么东西坏了），
@@ -167,7 +209,21 @@ host_error_count() {
   #    但它会让「编译/运行错误数 = 0」这条硬指标在 Linux 上永远为 1。
   #    本应用 bundle/main.splash 音频 API 引用实测 0 处（display_list 会误命中，
   #    排除后为 0），根本走不到这条路径 —— 纯属宿主环境噪声。
+  #
+  # ★ 2026-10-12（v0.5.2 W1-6）：白名单命中时**打一行 `[W] 白名单命中：`**。
+  #   原来它静默扣除，于是「错误数 = 0」有两种含义：真的没错误 / 有但被吃了。
+  #   后者本项目已在 Linux 上实际发生过，而这条数字是对外的硬指标 ——
+  #   不可追溯的 0 等于没有指标（测试报告 L-P3-1）。
   if [ "$n" != "0" ] && [ -n "${HOST_ERROR_WHITELIST:-}" ]; then
+    hits=$(grep '\[E\]' "$1" 2>/dev/null | grep -E "$HOST_ERROR_WHITELIST" || true)
+    if [ -n "$hits" ]; then
+      # ⚠️ 必须走 **stderr**：本函数的返回值是用 `$(host_error_count …)` 取的，
+      #    提示打到 stdout 会**混进返回值**，于是 `ERR` 变成
+      #    "  [W] 白名单命中…\n0"，下游 `[ "$ERR" = "0" ]` 立刻假失败
+      #    —— 这正是本函数开头注释里警告过的那类坑，不能自己再犯一遍。
+      printf '%s\n' "$hits" | head -3 \
+        | sed 's/^/  [W] 白名单命中（已扣除，不计入错误数）：/' >&2
+    fi
     n=$(grep '\[E\]' "$1" 2>/dev/null | grep -vE "$HOST_ERROR_WHITELIST" | grep -c '' || true)
     n=${n:-0}
   fi
@@ -175,7 +231,15 @@ host_error_count() {
 }
 
 # 白名单：Linux 无声卡环境下宿主自报的良性降级（不算应用错误）
-HOST_ERROR_WHITELIST='pulse_audio\.rs:.*pa_context_connect failed|pulseaudio.*connection refused|ALSA fallback'
+# ⚠️⚠️ 2026-10-12（v0.5.2 W1-6）：从「宽松子串匹配」收紧为**锚定行首的精确匹配**。
+#   原来的第二条 `pulseaudio.*connection refused` 里，`.` 在 BRE 下能匹配任意字符、
+#   `.*` 能跨任意长度 —— 等价于「这一行里出现 pulseaudio 和 connection refused
+#   （中间夹什么都行）就整行扣除」。于是一条**真的**应用错误只要恰好提到这两个词
+#   就会被静默扣掉，「编译/运行错误数 = 0」直接失真。
+#   现在三条都以 `^\[E\]` 起手并紧跟宿主自己的源码位置标识，跨不到别的行去。
+#   （下方 selftest 里有一条构造用例专门钉住这个行为：含 "connection refused"
+#   字样的**非音频**错误必须**不再**被扣除。）
+HOST_ERROR_WHITELIST='^\[E\] pulse_audio\.rs:[0-9][0-9]*: pa_context_connect failed|^\[E\] pulseaudio[^\[]*Connection refused|^\[E\] ALSA fallback'
 
 # ── 宿主进程探测 ──────────────────────────────────────────────────────
 # 实测：本机 `tasklist` 可用，输出里进程名就是 `card-host.exe`（不带路径）。
@@ -217,6 +281,33 @@ kill_host() {
   return 1
 }
 
+# ── 驱动步骤：前置失败即中断（2026-10-12 · v0.5.2 W1-2）─────────────
+# ⚠️ 为什么需要：`e2e.py open` / `fill` 失败时以前只 print 一行 FAIL、退出码仍是 0，
+#    而调用点普遍写成 `"$PY" tools/e2e.py fill x.ics 2>&1 | tail -1`
+#    —— 管道的退出码是 **tail 的**，永远是 0。
+#    于是一条根因（面板没打开 / 输入框没灌全）被后面的 parse / write / 断言
+#    放大成 6~7 条假 FAIL，报告读起来像应用全面崩了。
+#    本函数把驱动步骤包起来：退出码非 0 ⇒ 打印现场 + 直接终止本条流程。
+#    退出码 2 = 前置/夹具失败（脚本缺陷或环境不具备），1 = 真断言失败。
+must_drive() {  # $1 = 用例说明；其余 = 命令
+  local label="$1"; shift
+  local out rc
+  out=$("$@" 2>&1); rc=$?
+  if [ "$rc" != "0" ]; then
+    printf '%s\n' "$out" | tail -6 | sed 's/^/    /'
+    if [ "$rc" = "2" ]; then
+      echo "FATAL: 前置步骤失败（退出码 2）——「${label}」。" >&2
+      echo "       这是**夹具/环境问题，不是应用断言失败**：上面这一条是根因，" >&2
+      echo "       后续断言不会执行，也不应按它们判断应用好坏。" >&2
+    else
+      echo "FATAL: 步骤失败（退出码 ${rc}）——「${label}」。" >&2
+    fi
+    exit 2
+  fi
+  printf '%s\n' "$out"
+  return 0
+}
+
 # ── 端口占用探测 ──────────────────────────────────────────────────────
 # 宿主就绪探测只看「端口有没有响应」。若上一个宿主没退干净，新宿主绑不上端口，
 # 但**探测会打到旧宿主**上——于是整轮测试其实是在测别人的进程，结果全错却不自知。
@@ -248,7 +339,7 @@ boot_host() {
     echo "FATAL: 找不到 card-host。" >&2
     echo "       先构建：cd OctoSense-App-Hub && cargo build --release -p octosense-card-host -p octosense-app-hub" >&2
     echo "       或指定：OCTO_CARD_HOST=/path/to/card-host bash tools/run_e2e.sh" >&2
-    exit 1
+    exit 2   # 前置/环境类失败，不是应用断言失败（见 assert_clean 的说明）
   fi
 
   kill_host
@@ -283,7 +374,7 @@ boot_host() {
     echo "       仍在运行的 card-host：" >&2
     host_pids >&2
     echo "       修法：taskkill /F /IM card-host.exe 后重跑。" >&2
-    exit 1
+    exit 2   # 前置/环境类失败
   fi
 
   # ⚠️⚠️ 显式传 --size（2026-10-08）：不传时 card-host 默认 412x892，但实测
@@ -307,7 +398,7 @@ boot_host() {
     echo "FATAL: 宿主未就绪。日志尾部：" >&2
     tail -20 "$log" >&2
     host_running && { echo "       仍在运行的 card-host：" >&2; host_pids >&2; }
-    exit 1
+    exit 2   # 前置/环境类失败
   fi
   sleep 2
   # 本轮用的是哪个存储目录 —— 排障时最想知道的一件事。

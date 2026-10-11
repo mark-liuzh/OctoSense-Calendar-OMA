@@ -343,10 +343,18 @@ eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT" "$D"
 
 echo
 echo "=== [9/9] 错误检查 ==="
-ERR=$(grep -cE "error|SPLASH.*(not found|invalid|expect)" "$OUT/run.log" 2>/dev/null || true)
+# ★ 2026-10-12（v0.5.2 W1-4）：原来这里是 `grep -cE "error|SPLASH.*(not found|invalid|expect)"`
+#   —— 匹配**任何含 error 字样的行**，而其余 7 条流程用的 host_error_count 只匹配 `[E]`。
+#   两份测试报告里那个「无法解释的错误数」由此一次性解释掉：
+#     · Linux 的 1  = `libEGL warning: DRI3 error: Could not get DRI3 device`
+#                  （Xvfb 无 GPU 的良性回退，报告附录 C 自己列为「不计入缺陷」）
+#     · Windows 的 10 = 10 条 `Script data fetch request error: reserved request header`
+#                  （平台缺陷的 `[I]` 级日志，不是错误）
+#   两边都会归零，且这个数字从此与其余 7 条口径一致、可被同一条 grep 采集。
+ERR=$(host_error_count "$OUT/run.log")
 echo "编译/运行错误数: ${ERR:-0}"
 if [ "${ERR:-0}" != "0" ]; then
-  grep -nE "error|SPLASH.*(not found|invalid|expect)" "$OUT/run.log" | head -20
+  grep -n '\[E\]' "$OUT/run.log" | head -20
   FAIL=1
 fi
 

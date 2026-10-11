@@ -636,6 +636,34 @@ def need_wait(s, label):
     return need(s, label)
 
 
+def wait_panel(before_n, timeout=8.0, interval=0.35):
+    """等导入面板**真正接管视口** → (ok, entry节点, 当前节点数)。
+
+    ⚠️ 为什么不能只看「entry 在不在树里」（2026-10-12 · v0.5.2 W1-2）：
+       entry 与月历那 42 个点击层都是**静态声明**的控件，宿主分步更新时
+       entry 先进树、月历还没被面板换掉 —— 半个面板状态被当成「打开成功」。
+       后面 fill 能灌进去、parse 却点在旧页面上，一条根因放大成 7 条假 FAIL。
+       面板展开后会顶掉整个月历区 ⇒ 节点数**大幅下降**，用它做第二条判据，
+       两条同时满足才算数（`_stable` 之后再取，避免卡在下降过程中的任一帧）。
+    """
+    deadline = time.time() + timeout
+    while True:
+        s = snap()
+        e = find_id(s, "entry")
+        n = len(s)
+        # 「大幅下降」的门槛：月历区（格子按钮 + 日期 Label）远多于导入面板控件。
+        # 取 60% 是保守值 —— 实测展开前后约 190 → 70。
+        if e is not None and n <= before_n * 0.6:
+            time.sleep(0.3)
+            s2 = snap()
+            # 连续两帧都满足才返回，挡住「下降过程中的过渡帧」
+            if find_id(s2, "entry") is not None and len(s2) <= before_n * 0.6:
+                return True, e, len(s2)
+        if time.time() >= deadline:
+            return False, e, n
+        time.sleep(interval)
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "texts"
 
@@ -648,13 +676,34 @@ def main():
 
     elif cmd == "open":
         # 轮询而不是一次性找：宿主刚 detach 返回时按钮可能还没进布局树（见 wait_id 注释）
-        n, _ = wait_btn("导入")
-        if not n:
-            print("FAIL: 找不到按钮「导入」")
-            return
-        print("click 导入", click_node(n))
-        e, _ = wait_id("entry")
-        print("entry 存在:", e is not None)
+        # ★ 2026-10-12（v0.5.2 W1-2）：返回前确认面板**真的接管了视口**。
+        #   原来只看 `entry 是否存在`，而 entry 与「月历格子的点击层」是**同层声明**
+        #   的静态控件 —— 宿主分步更新时 entry 先进布局树、月历还没被面板替换，
+        #   于是 open「成功」返回，后面 fill 灌进去了、parse 却在旧页面上点「解析」，
+        #   **一条根因被放大成 7 条假 FAIL**（Windows 报告 7/8 全红）。
+        #   判据见 wait_panel()：entry 在树里 **且** 节点数大幅下降，连续两帧都满足。
+        # ⚠️ 点一次不够（2026-10-12 实测）：全量回归里偶发「点了没落地」——
+        #   节点数 450 → 460（不降反升）、entry 不在树里，面板根本没开。
+        #   真身是宿主那边点击排队异步落地（与 click_month_once 必须 timeout=10s 同源）。
+        #   第一次点没开就再点一次，第二次仍不接管才判失败。
+        #   这不是「把断言改松」：接管判据（节点数大幅下降 + entry 在树里）一点没放松。
+        ok = False
+        for attempt in range(2):
+            n, _ = wait_btn("导入")
+            if not n:
+                print("FAIL: 找不到按钮「导入」")
+                sys.exit(2)
+            before = len(snap())
+            print("click 导入（第 %d 次）" % (attempt + 1), click_node(n))
+            ok, e, after = wait_panel(before)
+            print("面板已接管视口:", ok, "节点数 %d -> %d" % (before, after))
+            if ok:
+                break
+            print("  未接管，重试一次（entry 在树里: %s）" % (e is not None))
+        if not ok:
+            print("FAIL: 点了两次「导入」面板都没有接管视口")
+            print("  节点数 %d -> %d（预期大幅下降）" % (before, after))
+            sys.exit(2)
 
     elif cmd == "city_panel":
         # 打开天气城市面板（v0.5.0）。
@@ -757,7 +806,7 @@ def main():
         e, _ = wait_id("entry")
         if not e:
             print("FAIL: entry 不在树里，先 open")
-            return
+            sys.exit(2)
         click_node(e)
         # ★ 2026-10-01：灌完**校验真实内容**，不符就重来。
         #   为什么必须校验：清空后队列里可能残留尚未落地的删除键，会把紧接着打进去的
@@ -787,8 +836,13 @@ def main():
                   % (attempt + 1, len(data), len(got)))
         print("已灌入 %d 字符（实得 %d）" % (len(data), len(got)))
         if len(got) < len(data):
+            # ★ 2026-10-12（v0.5.2 W1-2）：**非零退出码中断流程**。
+            #   原来只 print 一行 FAIL 就 return 0，shell 那侧 `| tail -1` 只看输出、
+            #   `$?` 取的是 tail 的退出码 ⇒ 灌入不完整这条根因被完全吞掉，
+            #   后面 parse/write 在一个残缺输入框上继续跑，全红且指向错的方向。
             print("FAIL: 灌入内容不完整（输入框里只有 %d / %d 字符）"
                   % (len(got), len(data)))
+            sys.exit(2)
 
     elif cmd == "parse":
         n, _ = wait_btn("解析")

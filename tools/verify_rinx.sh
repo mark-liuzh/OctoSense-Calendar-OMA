@@ -37,7 +37,20 @@ BUNDLE="$ROOT/bundle"
 RINX_CACHE="$ROOT/.runtime/rinx"
 RINX_VER="${RINX_VER:-1.1.0}"
 CARGO="${CARGO:-}"
-[ -n "$CARGO" ] || CARGO="$(command -v cargo 2>/dev/null || echo /Users/odycai/.cargo/bin/cargo)"
+# ★ 2026-10-12（v0.5.2 W1-1）：原来回退到 `/Users/odycai/.cargo/bin/cargo`
+#   —— 本机 rustup 默认路径。换机器必然不存在。改成顺序探测：
+#   CARGO 环境变量 → PATH 里的 cargo → ~/.cargo/bin/cargo（rustup 标准安装位，
+#   用 $HOME 推导而不是写死用户名）→ 都没有就报可读的错并退出。
+if [ -z "$CARGO" ]; then
+  CARGO="$(command -v cargo 2>/dev/null || true)"
+fi
+if [ -z "$CARGO" ] && [ -x "$HOME/.cargo/bin/cargo" ]; then
+  CARGO="$HOME/.cargo/bin/cargo"
+fi
+if [ -z "$CARGO" ]; then
+  echo "FATAL: 找不到 cargo。装 Rust（https://rustup.rs），或 CARGO=/path/to/cargo bash tools/verify_rinx.sh" >&2
+  exit 2
+fi
 
 # ⚠️ 必须把 cargo 的目录加进 PATH（不只是脚本自己用 CARGO 绝对路径）：
 #    步骤 5 跑 Rinx 的 tools/package-system-apps/check.sh 是 Rinx 自带的脚本，
@@ -61,7 +74,7 @@ echo "cargo:    $CARGO"
 echo "=================================================================="
 
 # ── 前置检查 ──────────────────────────────────────────────────────────
-[ -x "$CARGO" ] || die "找不到 cargo：$CARGO（先 rustup 或设 CARGO=...）"
+[ -x "$CARGO" ] || die "找不到 cargo：${CARGO}（先 rustup 或设 CARGO=...）"
 [ -d "$BUNDLE" ] || die "找不到 bundle/：$BUNDLE"
 [ -f "$BUNDLE/manifest.json" ] || die "bundle/manifest.json 缺失"
 command -v curl >/dev/null 2>&1 || die "需要 curl"
@@ -81,7 +94,7 @@ else
   URL="https://api.github.com/repos/hagency-org/Rinx/tarball/v${RINX_VER}"
   if ! curl -fsSL --max-time 120 -o "$TARBALL.tmp" "$URL"; then
     rm -f "$TARBALL.tmp"
-    die "下载失败：$URL（网络问题或 Rinx ${RINX_VER} tag 不存在）"
+    die "下载失败：${URL}（网络问题或 Rinx ${RINX_VER} tag 不存在）"
   fi
   mv "$TARBALL.tmp" "$TARBALL"
   rm -rf "$SRC"

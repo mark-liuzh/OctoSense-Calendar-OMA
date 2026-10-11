@@ -49,15 +49,17 @@ echo "宿主就绪  python=$PY  host=$HOST"
 
 echo
 echo "=== [2/8] 导入 seed.ics（常规 3 事件）==="
-"$PY" tools/e2e.py open  >/dev/null 2>&1
-"$PY" tools/e2e.py fill seed.ics >/dev/null 2>&1
+# ★ 2026-10-12（W1-2）：open/fill 改走 must_drive —— 面板没打开、输入框没灌全
+#   时立刻退出，不再把一条根因放大成一串后面的字段断言全红。
+must_drive "打开导入面板（seed）" "$PY" tools/e2e.py open
+must_drive "灌入 seed.ics" "$PY" tools/e2e.py fill seed.ics
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 "$PY" tools/e2e.py write 2>&1 | grep -E "已写入|FAIL" | head -2
 
 echo
 echo "=== [3/8] 导入 edge.ics（RRULE / DESCRIPTION / ORGANIZER / UTC）==="
-"$PY" tools/e2e.py open  >/dev/null 2>&1
-"$PY" tools/e2e.py fill edge.ics >/dev/null 2>&1
+must_drive "打开导入面板（edge）" "$PY" tools/e2e.py open
+must_drive "灌入 edge.ics" "$PY" tools/e2e.py fill edge.ics
 "$PY" tools/e2e.py parse 2>&1 | grep -E "解析|重复日程" | head -3
 "$PY" tools/e2e.py write 2>&1 | grep -E "已写入|FAIL" | head -2
 
@@ -79,7 +81,7 @@ echo "=== [5/8] 导出到输入框并落盘 ==="
 to_top
 # ⚠️ 此时导入面板是「关」的（confirm_import 会收起它），open 一次正好打开。
 #    见 [7/8] 的说明。
-"$PY" tools/e2e.py open >/dev/null 2>&1
+must_drive "打开导入面板（导出）" "$PY" tools/e2e.py open
 "$PY" tools/e2e.py export >/dev/null 2>&1
 "$PY" tools/e2e.py entry "$EV/exported.ics" 2>&1 | tail -12
 
@@ -110,7 +112,7 @@ echo "（期望 新增 0 / 改期 0 / 跳过 6）"
 # ⚠️ 这里**不能**再 open：toggle_import() 是切换，而且打开时会清空输入框 ——
 #    面板此刻已经是开的，再点一次会把面板关掉（「找不到按钮『解析』」），
 #    顺便把刚导出的内容也清掉。
-"$PY" tools/e2e.py fill "$EV/exported.ics" 2>&1 | tail -1
+must_drive "灌回 exported.ics（往返）" "$PY" tools/e2e.py fill "$EV/exported.ics"
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 # ⚠️ 必须 write 一次才能看到往返结论：状态条在导入面板打开时会主动让位隐藏
 #    （设计稿要求面板互斥），只有面板收起后的文案才是最终状态。

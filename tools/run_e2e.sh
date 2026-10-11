@@ -33,8 +33,17 @@ shot()  { sleep 0.5; $CURL "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM$RANDOM" -o 
 #   期望值故意只取**最少的关键字**（不写完整事件标题、不写整段状态文案），
 #   避免「跟着实现写测试」导致实现微调就误判失败。
 PASS=0; FAIL=0
+# ⚠️ 滚动可见性（2026-10-12 · v0.5.2 W1-3）：`/snap` **只返回视口内控件**。
+#   宿主窗口高度会协商变小（本项目实测 412x849，设计视口 892），
+#   矮视口上「解析」「导入」这些在页头下方的控件可能整条不在渲染树 ——
+#   `expect` 扫不到就报红，而应用其实好好的。
+#   与 run_conflict.sh 同构：目标在**页头**用 expect（先滚到顶），
+#   目标在**页面下方**用 expect_scroll（向下滚）。
+#   ⚠️ 两个方向相反，搞反会**制造**失败（先 to_top 把已在视口里的目标推出视口）。
+to_top() { for _ in 1 2 3 4 5 6; do "$PY" tools/e2e.py scroll -420 >/dev/null 2>&1; done; sleep 0.4; }
 expect() {  # $1 = 期望子串, $2 = 用例说明
   local got
+  to_top
   got=$("$PY" tools/e2e.py texts 2>&1)
   if printf '%s' "$got" | grep -qF "$1"; then
     echo "  OK   $2"; PASS=$((PASS+1))
@@ -43,10 +52,28 @@ expect() {  # $1 = 期望子串, $2 = 用例说明
     FAIL=$((FAIL+1))
   fi
 }
+expect_scroll() {  # $1 = 期望子串, $2 = 用例说明
+  local got i
+  got=$("$PY" tools/e2e.py texts 2>&1)
+  if printf '%s' "$got" | grep -qF "$1"; then
+    echo "  OK   $2"; PASS=$((PASS+1)); return 0
+  fi
+  for i in 1 2 3 4 5 6; do
+    "$PY" tools/e2e.py scroll 420 >/dev/null 2>&1
+    sleep 0.5
+    got=$("$PY" tools/e2e.py texts 2>&1)
+    if printf '%s' "$got" | grep -qF "$1"; then
+      echo "  OK   $2（向下滚动 $i 次后进入视口）"; PASS=$((PASS+1)); return 0
+    fi
+  done
+  echo "  FAIL $2 —— 向下滚到底仍未出现「$1」"
+  FAIL=$((FAIL+1)); return 1
+}
 # 读「事件库」指标（= events.len()）。dump 一行形如
 #   metric_events [Label] r=[...]  '3'
 metric_is() {  # $1 = 期望值, $2 = 用例说明
   local got
+  to_top
   got=$("$PY" tools/e2e.py dump 2>&1 | grep -F "metric_events [Label]" | head -1 \
         | grep -oE "'[^']*'" | tail -1 | tr -d "'")
   if [ "$got" = "$1" ]; then
@@ -68,19 +95,22 @@ metric_is "0" "事件库起始为 0"
 
 echo
 echo "=== [3/7] 点「导入」展开面板 ==="
-"$PY" tools/e2e.py open 2>&1
+# ★ 2026-10-12（W1-2/W1-3）：open 失败（面板没接管视口）时**立即退出**，
+#   不再往下跑 fill/parse/write 去连锁放大成 6 条假 FAIL。
+must_drive "点「导入」展开面板" "$PY" tools/e2e.py open
 snap
 "$PY" tools/e2e.py dump 2>&1 | grep -Ei "entry|import_panel" || echo "(未找到 entry/import_panel)"
 shot "02-import-open.png"
-expect "解析" "点导入后面板应展开，能找到「解析」按钮"
-expect "导入" "点导入后面板标题应是「导入」"
+# 「解析」按钮在导入面板靠下位置 → 用 expect_scroll（向下滚）。
+expect_scroll "解析" "点导入后面板应展开，能找到「解析」按钮"
+expect_scroll "导入" "点导入后面板标题应是「导入」"
 
 echo
 echo "=== [4/7] 灌入 seed.ics 并解析 ==="
-"$PY" tools/e2e.py fill seed.ics 2>&1
+must_drive "灌入 seed.ics" "$PY" tools/e2e.py fill seed.ics
 "$PY" tools/e2e.py parse 2>&1 | tail -8
 shot "03-parsed.png"
-# parse 完成后状态条会写「解析 3 个：新增 3 · 改期 0 · 跳过 0」
+# parse 完成后状态条会写「解析 3 个：新增 3 · 改期 0 · 跳过 0」——状态条在**页头**，用 expect。
 expect "解析 3 个" "seed.ics 含 3 个事件，解析后状态条应报「解析 3 个」"
 expect "预览" "解析完成应进入「预览」态"
 
@@ -111,14 +141,8 @@ snap
 "$PY" tools/e2e.py texts 2>&1 | tail -18
 shot "06-list2.png"
 # seed.ics 里有「黑客松初赛截止」—— 用它做探针：只要事件真的渲染进列表，这串字就会出现。
-expect "黑客松初赛截止" "列表里应至少能看到一个事件标题"
-# ⚠️⚠️ 2026-10-04 修：读「事件库」指标之前**必须先滚回顶部**。
-#    `metric_events` 在页头（.headmeta），上面两步把它滚出了 892px 视口；
-#    而 `/snap` **只返回落在视口里的控件** → `metric_is` 读到空串，
-#    把「测试忘了滚回去」误报成「事件库从 3 变成了空」。
-#    （A/B 实测：v0.4.0 原样 bundle 同样在这一行失败 —— 是夹具问题，不是应用回归。）
-"$PY" tools/e2e.py scroll -840 >/dev/null 2>&1
-sleep 0.6
+expect_scroll "黑客松初赛截止" "列表里应至少能看到一个事件标题"
+# ⚠️⚠️ 2026-10-04 修：读「事件库」指标之前**必须先滚回顶部**（metric_is 内部已含 to_top）。
 metric_is "3" "列表翻完后事件库仍为 3"
 
 echo

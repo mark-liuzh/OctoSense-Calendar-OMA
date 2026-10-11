@@ -102,8 +102,10 @@ echo
 echo "=== [6/6] 错误检查 ==="
 NERR=$(host_error_count "$OUT/run-features.log")
 NERR2=$(host_error_count "$OUT/run-features2.log")
-echo "第一个宿主错误数: $NERR"
-echo "第二个宿主错误数: $NERR2"
+# ★ 2026-10-12（v0.5.2 W2-6）：口径与其余 7 条对齐 —— 统一打
+#   「编译/运行错误数: N」。原来这里打「第一个/第二个宿主错误数」，
+#   采集脚本按统一格式 grep 抓不到，只能靠人肉读，人一多就漏。
+echo "编译/运行错误数: $((NERR + NERR2))（第一个宿主 ${NERR} + 第二个宿主 ${NERR2}）"
 grep '\[E\]' "$OUT/run-features.log" 2>/dev/null | head -5 || true
 grep '\[E\]' "$OUT/run-features2.log" 2>/dev/null | head -5 || true
 echo "证据文件:"

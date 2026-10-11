@@ -31,12 +31,15 @@ from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
+import octo_shot  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, ".runtime")
 EV = os.path.join(OUT, "evidence")
 SPLASH = os.path.join(ROOT, "bundle", "main.splash")
-OCTO = os.environ.get("OCTO", "D:/Projects/OctoScript-App-Design-Flow/tools/octo")
+# ★ 2026-10-12（v0.5.2 W1-1）：原为开发者本机 Windows 绝对路径，干净克隆上必然
+#   失败（且失败是静默的，见 shot()）。通道解析收口到 tools/octo_shot.py。
+OCTO = octo_shot.OCTO
 PY = sys.executable
 
 FAILS = []
@@ -53,11 +56,10 @@ def note(msg):
 
 
 def shot(tag):
+    """抓帧。失败**抛异常**并带 returncode / stderr（见 octo_shot.shot 的说明）。"""
     os.makedirs(EV, exist_ok=True)
     out = os.path.join(EV, "ft-%s.png" % tag)
-    subprocess.run([PY, OCTO, "shot", str(e2e.PORT), out, "--settle", "0.8"],
-                   capture_output=True)
-    return out
+    return octo_shot.shot(OCTO, e2e.BASE, out, tag, settle=0.8, py=PY)
 
 
 # ── 快照取值 ──────────────────────────────────────────────────────────

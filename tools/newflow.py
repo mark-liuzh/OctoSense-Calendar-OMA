@@ -16,11 +16,12 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
+import octo_shot  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, ".runtime")
-OCTO = os.environ.get("OCTO", "D:/Projects/OctoScript-App-Design-Flow/tools/octo")
 PY = sys.executable
+OCTO = octo_shot.OCTO
 
 FAILS = []
 
@@ -59,12 +60,65 @@ def center(n):
     return r[0] + r[2] / 2.0, r[1] + r[3] / 2.0
 
 
+def pointer_off():
+    """把鼠标指针挪到页面左上角空白处，让悬停层从当前格子上退掉。
+
+    ★ 2026-10-12（v0.5.2 W1-1 连带修复）：这条是本轮**实测挖出来的真 bug**，
+       症状是「选中底色 #f6dcc7」断言稳定读到 #f1cfb6。
+       真因不是 settle 不够、也不是动画中间帧，而是**层序**：
+
+         #f1cfb6 = #f6dcc7（选中底） 叠加 c_hover_bg #xe4b28e4d（赤陶 30% alpha）
+                 R 246→241   G 220→207   B 199→182     ← 逐通道都对得上
+
+       `e2e.click()` 用的就是「在目标坐标合成一次点击」，**鼠标指针因此留在那一格上**，
+       于是格子同时呈现 hover + selected。移开指针后立刻回到 #f6dcc7（实测稳定）。
+
+       ⚠️⚠️ 顺带更正一条**已过期**的项目结论：bundle/main.splash:6780 附近写着
+          「card-host 的**合成**鼠标输入复现不出hover —— `/m?k=move`（含 &hw=1
+          那条硬件路径）、可见窗口、隐藏窗口、等 3 秒全都测过，两图 md5 相同」。
+          本轮实测 `POST /m?k=move` 是**有效**的（宿主控制桥返回 {"ok":1}，
+          像素立刻从 #f1cfb6 变回 #f6dcc7）。那条结论应当作废，
+          但它写在 bundle 里、影响签名件，本轮只在 tools 侧处置，
+          改正文归v0.5.2 应用批次（见本轮工作记录）。
+    """
+    e2e._get("/m?k=move&x=6&y=6")
+    time.sleep(0.5)
+
+
 def shot(tag):
+    """抓一张宿主当前帧到 .runtime/evidence/nf-<tag>.png。返回路径。
+
+    ★ 2026-10-12（v0.5.2 W1-1）：**不再吞异常**。
+       原实现是 `subprocess.run([PY, OCTO, "shot", ...], capture_output=True)`
+       —— capture_output=True 把 stdout/stderr 一起丢掉，且从不检查 returncode。
+       后果：octo 不存在 / 抓帧失败 / PNG 没写出来时，这里**照样返回一个路径**，
+       后面 px_at() 才去 open 一个不存在的文件，抛 FileNotFoundError。
+       一条根因被放大成 8 条「px_at 失败」的假 FAIL（正是 Linux 报告的现象）。
+       现在通道与异常处理都收口在 tools/octo_shot.py（三个驱动脚本共用一份）。
+    """
     out = os.path.join(OUT, "evidence", "nf-%s.png" % tag)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    subprocess.run([PY, OCTO, "shot", str(e2e.PORT), out, "--settle", "0.9"],
-                   capture_output=True)
-    return out
+    # ⚠️ 必须先挪走指针：`e2e.click()` 是「在目标坐标合成一次点击」，
+    #   指针会**留在那一格上** ⇒ 格子同时呈现 hover + selected，抓到的是
+    #   合成色 #f1cfb6 而不是选中色 #f6dcc7。真因与修法见 pointer_off()。
+    pointer_off()
+    return octo_shot.shot(OCTO, e2e.BASE, out, tag, py=PY)
+
+
+def _run_e2e(*args):
+    """跑一条 e2e.py 子命令，**检查退出码**，失败即抛（stderr 尾部进异常信息）。
+
+    ★ 2026-10-12（v0.5.2 W1-1）：与 shot() 同一个理由 —— 原来这些调用一律
+       `capture_output=True` 且不看 returncode，于是「e2e.py 内部报 FAIL」
+       在这里被完全吞掉，后续断言拿着一个没翻成功的月份继续跑，
+       一条根因又变成好几条假 FAIL。
+    """
+    p = subprocess.run([PY, os.path.join(ROOT, "tools", "e2e.py")] + list(args),
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError("e2e.py %s 失败（exit=%d）：%s"
+                           % (" ".join(args), p.returncode,
+                              (p.stdout + p.stderr).strip()[-300:]))
+    return p.stdout or ""
 
 
 def px_at(png, lx, ly):
@@ -300,25 +354,21 @@ check("翻月后同一格子无高亮", px_at(p, *center(cs7[21])) == "#ffffff",
 
 print("=== E 每年重复要展开到明年（2027-09 有事件点，2026-10 没有）===")
 # 从 2026-10 往后 11 个月 → 2027-09
-subprocess.run([PY, os.path.join(ROOT, "tools", "e2e.py"), "months", "11"],
-               capture_output=True)
+_run_e2e("months", "11")
 time.sleep(0.8)
 check("已到 2027 年 9 月", text_of("month_title") == "2027 年 9 月", str(text_of("month_title")))
 p = shot("yearly-next")
-out = subprocess.run([PY, os.path.join(ROOT, "tools", "e2e.py"), "dotcolor", p],
-                     capture_output=True, text=True).stdout
+out = _run_e2e("dotcolor", p)
 kinds = [l for l in out.splitlines() if l.startswith("DOTKIND=")]
 nev = (kinds[0].count("EVENT") if kinds else 0)
 check("2027-09 出现事件点（每年规则确实展开到明年）", nev >= 1, kinds[0] if kinds else out[:120])
 
 # 回到 2026-10：它不是每月重复，应该一个事件点都没有
-subprocess.run([PY, os.path.join(ROOT, "tools", "e2e.py"), "months", "-11"],
-               capture_output=True)
+_run_e2e("months", "-11")
 time.sleep(0.8)
 check("已回到 2026 年 10 月", text_of("month_title") == "2026 年 10 月", str(text_of("month_title")))
 p = shot("monthly-no")
-out = subprocess.run([PY, os.path.join(ROOT, "tools", "e2e.py"), "dotcolor", p],
-                     capture_output=True, text=True).stdout
+out = _run_e2e("dotcolor", p)
 kinds = [l for l in out.splitlines() if l.startswith("DOTKIND=")]
 nev = (kinds[0].count("EVENT") if kinds else 0)
 check("2026-10 没有事件点（不是每月/每天重复）", nev == 0, kinds[0] if kinds else out[:120])

@@ -33,10 +33,16 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
+import octo_shot  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 OUT = os.path.join(ROOT, ".runtime")
-OCTO = os.environ.get("OCTO", "D:/Projects/OctoScript-App-Design-Flow/tools/octo")
+# ★ 2026-10-12（v0.5.2 W1-1）：原来这里写死了开发者本机的 Windows 路径
+#   `D:/Projects/OctoScript-App-Design-Flow/tools/octo`。干净克隆上它不存在 ⇒
+#   shot() 静默返回一个没生成的路径 ⇒ dotcolor 打不出 DOTKIND ⇒
+#   event_dots() 返回 -1，**两条断言都红**（实测「2026-09 事件点 == 2」实得 -1）。
+#   看起来像「RRULE 展开坏了」，真因是工具路径。通道解析收口到 tools/octo_shot.py。
+OCTO = octo_shot.OCTO
 PY = sys.executable
 ICS = os.path.join(OUT, "rrule-guard.ics")
 FAILS = []
@@ -119,11 +125,10 @@ def click_btn(t):
 
 
 def shot(tag):
+    """抓帧。失败**抛异常**并带 returncode / stderr（见 octo_shot.shot 的说明）。"""
     out = os.path.join(OUT, "evidence", "rg-%s.png" % tag)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    subprocess.run([PY, OCTO, "shot", str(e2e.PORT), out, "--settle", "0.9"],
-                   capture_output=True)
-    return out
+    return octo_shot.shot(OCTO, e2e.BASE, out, tag, py=PY)
 
 
 def event_dots(tag, want_y, want_m):

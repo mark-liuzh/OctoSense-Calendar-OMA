@@ -77,28 +77,31 @@ echo "宿主就绪"
 
 echo
 echo "=== [2/7] 空输入 ==="
-"$PY" tools/e2e.py open >/dev/null 2>&1
+# ★ 2026-10-12（W1-2）：驱动步骤改用 must_drive —— open/fill 失败立刻退出。
+#   原来全是 `>/dev/null 2>&1`，退出码还被管道吃掉 ⇒ 面板没开也会继续往下跑，
+#   后面每条 expect 都在一个没打开的面板上判，全红且指向错的方向。
+must_drive "打开导入面板" "$PY" tools/e2e.py open
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 expect "输入框是空的" "空输入应被明确拒绝"
 shot "01-empty-input.png"
 
 echo
 echo "=== [3/7] 非 ICS 文本 ==="
-"$PY" tools/e2e.py fill "$FX/not-ics.txt" >/dev/null 2>&1
+must_drive "灌入 not-ics.txt" "$PY" tools/e2e.py fill "$FX/not-ics.txt"
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 expect "不是 ICS 文件" "普通文本应被识别为非 ICS，而不是解析出 0 个事件"
 shot "02-not-ics.png"
 
 echo
 echo "=== [4/7] 只有外壳、没有事件 ==="
-"$PY" tools/e2e.py fill "$FX/shell-only.ics" >/dev/null 2>&1
+must_drive "灌入 shell-only.ics" "$PY" tools/e2e.py fill "$FX/shell-only.ics"
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 expect "没有解析出任何事件" "空日历应给出空状态提示"
 shot "03-shell-only.png"
 
 echo
 echo "=== [5/7] 残缺事件（缺 UID / 缺 DTSTART / 未闭合）==="
-"$PY" tools/e2e.py fill "$FX/broken-events.ics" >/dev/null 2>&1
+must_drive "灌入 broken-events.ics" "$PY" tools/e2e.py fill "$FX/broken-events.ics"
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 # 关键：不能只说「N 条警告」，要指出**哪一行**、缺什么
 expect "缺 UID" "应指出第一处问题的具体位置与原因"
@@ -108,7 +111,7 @@ echo
 echo "=== [6/7] 不存在的日期（2 月 30 日 / 平年 2 月 29 日）==="
 # fixture 里 4 个事件：前两个日期不存在（2026-02-30、2026-02-29），
 # 后两个是真的（2024-02-29 闰日、2026-10-04）。
-"$PY" tools/e2e.py fill "$FX/bad-date.ics" >/dev/null 2>&1
+must_drive "灌入 bad-date.ics" "$PY" tools/e2e.py fill "$FX/bad-date.ics"
 "$PY" tools/e2e.py parse >/dev/null 2>&1
 expect "不存在，已跳过" "不存在的日期要指出来（行号 + 具体日期），不能默默收下"
 expect "等 2 条" "两个不存在的日期都要被拦下（不是只拦第一个）"

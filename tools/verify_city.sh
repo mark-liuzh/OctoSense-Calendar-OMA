@@ -13,7 +13,12 @@ LOG="$OUT/verify-city.log"
 boot_host "$LOG" || exit 1
 sleep 2
 
-OCTO_PORT="$PORT" /Users/odycai/.workbuddy/binaries/python/envs/default/bin/python - <<'PY'
+# ★ 2026-10-12（v0.5.2 W1-1）：原来写死了 `/Users/odycai/.workbuddy/binaries/python/
+#   envs/default/bin/python` —— **本机 managed venv 的绝对路径**。换机器 /换人
+#   必然不存在，而它出现在 heredoc 解释器位置 ⇒ bash 报「command not found」，
+#   后面的断言全部不执行，看起来像「城市选择验收没跑」。
+#   _env.sh 已经把可用解释器探测到 $PY 了（PY= 可覆盖），直接用它。
+OCTO_PORT="$PORT" "$PY" - <<'PY'
 import os, sys, time, json, glob
 sys.path.insert(0, 'tools')
 import e2e

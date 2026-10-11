@@ -107,8 +107,9 @@ to_top() { for _ in 1 2 3 4 5 6; do "$PY" tools/e2e.py scroll -400 >/dev/null 2>
 
 echo
 echo "=== [2/9] 导入基线 seed.ics（3 个事件，无冲突）==="
-"$PY" tools/e2e.py open 2>&1 | tail -2
-"$PY" tools/e2e.py fill seed.ics 2>&1 | tail -1
+# ★ 2026-10-12（W1-2）：open/fill 走 must_drive，前置失败立即终止本条流程。
+must_drive "打开导入面板（seed）" "$PY" tools/e2e.py open
+must_drive "灌入 seed.ics" "$PY" tools/e2e.py fill seed.ics
 "$PY" tools/e2e.py parse 2>&1 | grep -E "解析|新增|状态" | tail -3
 "$PY" tools/e2e.py write 2>&1 | grep -E "已写入|冲突|状态" | tail -3
 shot "01-after-seed.png"
@@ -117,8 +118,8 @@ metric_is "3" "事件库应为 3 个事件"
 
 echo
 echo "=== [3/9] 再导入冲突 ICS（10-04 10:30-11:30 撞 10:00-11:00）==="
-"$PY" tools/e2e.py open 2>&1 | tail -2
-"$PY" tools/e2e.py fill conflict.ics 2>&1 | tail -1
+must_drive "打开导入面板（conflict）" "$PY" tools/e2e.py open
+must_drive "灌入 conflict.ics" "$PY" tools/e2e.py fill conflict.ics
 "$PY" tools/e2e.py parse 2>&1 | grep -E "解析|新增" | tail -2
 shot "02-conflict-preview.png"
 "$PY" tools/e2e.py write 2>&1 | grep -E "已写入|冲突|发现|状态|剩余" | tail -5
@@ -159,7 +160,7 @@ echo "=== [6/9] 导出 ICS（写入输入框）==="
 # ⚠️ 必须先滚回页顶（2026-10-08 P0-3）：工具条上的「导入 / 导出」在页头，
 #   [4/9][5/9] 为了点冲突条按钮已经滚到底，「导入」会离开视口、从渲染树消失。
 to_top
-"$PY" tools/e2e.py open 2>&1 | tail -1
+must_drive "打开导入面板（导出）" "$PY" tools/e2e.py open
 "$PY" tools/e2e.py export 2>&1 | grep -E "entry 长度|DTSTART|DTEND|BEGIN:VEVENT|SUMMARY" | head -20
 shot "06-export.png"
 # 把 entry 文本存盘，下面 [7/9] 的「导出不丢信息」硬证据就要在这里取样。
@@ -190,7 +191,7 @@ fi
 echo
 echo "=== [7/9] 往返幂等：把导出的 ICS 原样再解析一次 ==="
 echo "（★ 关键硬证据：新增 0 / 改期 0 / 跳过 4 —— 导出不丢信息）"
-"$PY" tools/e2e.py fill "$EV/exported.ics" 2>&1 | tail -1
+must_drive "灌回 exported.ics（往返）" "$PY" tools/e2e.py fill "$EV/exported.ics"
 "$PY" tools/e2e.py parse 2>&1 | grep -E "解析|新增" | tail -2
 "$PY" tools/e2e.py write 2>&1 | grep -E "已写入|新增|改期|跳过|冲突" | tail -5
 shot "07-roundtrip.png"

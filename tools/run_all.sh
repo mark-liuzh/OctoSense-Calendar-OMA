@@ -70,6 +70,7 @@ fi
 STEPS="run_e2e run_conflict run_edge run_negative run_festival run_layout run_new run_features"
 
 FAILED=""
+FAILED_PREREQ=""     # exit=2：前置/夹具失败，**后续断言没跑完**，不代表应用坏
 NFAIL=0
 NOK=0
 
@@ -114,6 +115,16 @@ for s in $STEPS; do
 
   if [ "$rc" = "0" ]; then
     NOK=$((NOK + 1))
+  elif [ "$rc" = "2" ]; then
+    # ★ 2026-10-12（v0.5.2 W1-5）：退出码 2 = **前置/夹具失败**（must_drive /
+    #    assert_clean / boot_host 的 FATAL）。它意味着「这条流程的断言根本没跑完」，
+    #    而不是「应用断言不通过」。
+    #    为什么要单独归类：v0.5.1 及以前两类都算「失败」，汇总只有一句
+    #    「失败：run_e2e run_new」—— 读起来像应用全面崩了，其实真应用失败是 0 条，
+    #    全是脚本在 Linux/Windows 上找不到 octo、点不开面板造成的连锁红
+    #    （Linux 报告 run_new 10 条红 / Windows 报告 7/8 条红都是这个）。
+    FAILED_PREREQ="$FAILED_PREREQ $s"
+    NFAIL=$((NFAIL + 1))
   else
     FAILED="$FAILED $s"
     NFAIL=$((NFAIL + 1))
@@ -121,11 +132,26 @@ for s in $STEPS; do
 done
 
 # ── 汇总 ──────────────────────────────────────────────────────────────
+_n_list() { local n=0 w; for w in $1; do n=$((n + 1)); done; printf '%s' "$n"; }
+N_HARD=$(_n_list "$FAILED")
+N_PRE=$(_n_list "$FAILED_PREREQ")
+
 echo
 echo "=================================================================="
 echo "汇总：通过 $NOK / $((NOK + NFAIL))"
+# 必须先把「几条是真应用失败、几条是脚本自身缺陷」说清楚，再给总数。
+# 只给一个「通过 3/8」的话，读的人无从判断这次结果能不能拿去做验收 ——
+# 这正是两份测试报告最被误读的地方。
+echo "应用/断言失败（**结论有效**）: $N_HARD 条${FAILED:+ }$FAILED"
+if [ "$N_PRE" != "0" ]; then
+  echo "前置/夹具失败（**脚本缺陷，本次不作应用结论**）: $N_PRE 条$FAILED_PREREQ"
+  echo "  ↑ 这些流程在断言跑起来之前就中止了，列出的是**根因所在**而不是症状。"
+  echo "    请只看上面「应用/断言失败」那一行判断应用好坏。"
+else
+  echo "前置/夹具失败（**脚本缺陷，本次不作应用结论**）: 0 条"
+fi
 if [ "$NFAIL" != "0" ]; then
-  echo "失败：$FAILED"
+  echo "失败合计: $NFAIL${FAILED:+ }$FAILED${FAILED_PREREQ:+ }$FAILED_PREREQ"
   echo "=================================================================="
   exit "$NFAIL"
 fi
