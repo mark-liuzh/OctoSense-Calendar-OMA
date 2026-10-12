@@ -2673,21 +2673,45 @@ fn sync_ai_sched_panel() {
 }
 
 
-// v0.5.5：同步事件详情抽屉
+// v0.5.5 / v0.5.6：同步事件详情抽屉
 fn sync_detail_panel() {
     ui.detail_title.set_text(detail_event_summary())
     ui.detail_meta.set_text(detail_event_meta())
+    // 取消按钮只在事件存在且未取消时显示
+    let can_cancel = false
+    if detail_uid != "" {
+        for k in events.len() {
+            if events[k].uid == detail_uid && events[k].status != "CANCELLED" {
+                can_cancel = true
+            }
+        }
+    }
+    ui.detail_cancel_btn.set_visible(can_cancel)
     if detail_uid == "" { return }
     let n = note_of(detail_uid)
     ui.detail_note_in.set_text(n.note)
     ui.detail_minutes_in.set_text(n.minutes)
     ui.detail_follow_list.set_text(join_lines(n.followups))
     ui.detail_link_list.set_text(join_lines(n.links))
+    ui.detail_history_list.set_text(detail_history_text())
     // 标签页显隐
     ui.detail_note_in.set_visible(detail_tab == 0)
     ui.detail_minutes_in.set_visible(detail_tab == 1)
     ui.detail_follow_page.set_visible(detail_tab == 2)
     ui.detail_link_page.set_visible(detail_tab == 3)
+    ui.detail_history_page.set_visible(detail_tab == 4)
+    // 历史回滚按钮与历史版本一一对应
+    let hlist = history_of(detail_uid)
+    ui.detail_history_btn0.set_visible(hlist.len() > 0)
+    ui.detail_history_btn1.set_visible(hlist.len() > 1)
+    ui.detail_history_btn2.set_visible(hlist.len() > 2)
+    ui.detail_history_btn3.set_visible(hlist.len() > 3)
+    ui.detail_history_btn4.set_visible(hlist.len() > 4)
+    if hlist.len() > 0 { ui.detail_history_btn0.set_text("回滚到 [1]") }
+    if hlist.len() > 1 { ui.detail_history_btn1.set_text("回滚到 [2]") }
+    if hlist.len() > 2 { ui.detail_history_btn2.set_text("回滚到 [3]") }
+    if hlist.len() > 3 { ui.detail_history_btn3.set_text("回滚到 [4]") }
+    if hlist.len() > 4 { ui.detail_history_btn4.set_text("回滚到 [5]") }
 }
 
 
@@ -2764,6 +2788,9 @@ fn load() {
     load_aux()
     // ★ v0.5.5：读回事件详情笔记。
     load_notes()
+    // ★ v0.5.6：读回事件版本历史与自动排布集合。
+    load_history()
+    load_auto_events()
     // ★ v0.5.0：读回用户选定的天气城市（没有文件就是默认北京）。
     //   必须在 wx_live_load_cache / wx_live_fetch **之前** —— 那两个按当前坐标取数，
     //   坐标还没读回来就会先用北京的缓存上屏。
@@ -2984,6 +3011,8 @@ fn reschedule(uid, day, slot_start, slot_end) {
         let e = events[k]
         if e.all_day { return 0 }
         if e.rrule != "" { return 0 }
+        // ★ v0.5.6：改期前先保存版本历史，让每次改期都可回滚。
+        push_event_history(e)
         let dp = date_of(e.dtstart)
         let dpe = date_of(e.dtend)
         if dpe == "" { dpe = dp }
@@ -3208,6 +3237,8 @@ fn apply_ai_schedule() {
         ev.rrule = repeat_rule(d.repeat)
         ev.dtstamp = now_dtstamp()
         events.push(ev)
+        // ★ v0.5.6：AI 排程产生的事件标记为可自动重排。
+        mark_auto(ev.uid)
     }
 
     save()
@@ -3411,6 +3442,8 @@ fn todo_schedule(k) {
     ev.rrule = ""
     ev.dtstamp = now_dtstamp()
     events.push(ev)
+    // ★ v0.5.6：待办转日程产生的事件标记为可自动重排。
+    mark_auto(ev.uid)
     save()
     maybe_rescan()
     set_status_ok("已把待办排进 " + pretty_date(slot.d8) + " " + pretty_time(slot.start) + "-" + pretty_time(slot.end))
@@ -3449,6 +3482,33 @@ fn set_detail_tab(i) {
     detail_save_current()
     detail_tab = i
     refresh_all()
+}
+
+
+// 取消当前打开的事件。
+fn detail_cancel_current() {
+    if detail_uid == "" { return }
+    cancel_event(detail_uid)
+    detail_uid = ""
+    detail_open = false
+    sync_panels()
+    refresh_all()
+}
+
+
+// 生成历史版本列表文本。
+fn detail_history_text() {
+    let list = history_of(detail_uid)
+    if list.len() == 0 { return "暂无历史版本" }
+    let lines = []
+    for i in list.len() {
+        let idx = list.len() - 1 - i
+        let h = list[idx]
+        let e = h.event
+        let line = "[" + ("" + (i + 1)) + "] " + pretty_date(date_of(e.dtstart)) + " " + time_range(e)
+        lines.push(line)
+    }
+    return join_lines(lines)
 }
 
 
@@ -5195,6 +5255,14 @@ let report_text = ""               // 生成的周报文本
 let NOTES_FILE = "event-notes.json"   // {uid: {agenda, minutes, followups, links, comments}}
 let notes = {}                     // 内存中的笔记数据
 
+// ── v0.5.6 · 事件版本历史与自动排布 ──
+// 旁路存储：这两份数据**不参与 ICS 导出**，只在本机 storage 留存，
+// 避免污染事件对象形状（ICS 往返的基准是 new_event() 的字段集）。
+let HISTORY_FILE = "event-history.json"   // {uid: [ {saved_at, event}, ... ]}
+let history = {}                       // 内存中的版本历史
+let AUTO_EVENTS_FILE = "auto-events.json" // 自动排布事件 uid 集合，格式 "|uid|uid|"
+let auto_events = " "                  // 首尾空格便于 search 判断
+
 
 fn toggle_more() {
     more_open = !more_open
@@ -5206,6 +5274,262 @@ fn toggle_more() {
         ui.more_btn.set_text("详情")
     }
     sync_conflict()
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.6 · 事件版本历史与回滚
+//
+// 每次改期前把当前事件完整克隆一份存进 history[uid]，最多保留 5 个版本。
+// 导入事件不记历史（避免把外部批量数据塞爆本地存储）。
+// 版本数据只存本地，不参与 ICS 导出。
+//════════════════════════════════════════════════════════════════
+
+
+// 完整克隆一个事件对象，字段与 new_event()/reschedule() 完全一致。
+// ⚠️ 必须列全字段，否则读一个不存在的键会抛 prototype chain 错误。
+fn clone_event(e) {
+    return {
+        uid: e.uid, summary: e.summary,
+        dtstart: e.dtstart, dtend: e.dtend,
+        location: e.location, description: e.description,
+        organizer: e.organizer, status: e.status, sequence: e.sequence,
+        rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
+        dtstamp: e.dtstamp,
+        all_day: e.all_day, start_utc: e.start_utc, timezone: e.timezone,
+        extra: e.extra, extra_kinds: e.extra_kinds,
+        start_minutes: e.start_minutes, end_minutes: e.end_minutes
+    }
+}
+
+
+// 把事件 e 的当前版本推进历史。导入事件（uid 以 "ics-" / 外部 UID 无标记）也记，
+// 但历史只占用 5 版 × 单事件大小，1000 事件 ≈ 2.5 MB，在 16 MiB 内可控。
+fn push_event_history(e) {
+    if e == nil || e.uid == "" { return }
+    let list = []
+    let old = history[e.uid]
+    if old != nil { list = old }
+    list.push({ saved_at: time_now(), event: clone_event(e) })
+    // 只保留最近 5 个版本
+    while list.len() > 5 {
+        let kept = []
+        for i in list.len() { if i > 0 { kept.push(list[i]) } }
+        list = kept
+    }
+    history[e.uid] = list
+    save_history()
+}
+
+
+fn save_history() {
+    fs.write(HISTORY_FILE, history.to_json())
+}
+
+
+fn load_history() {
+    if fs.exists(HISTORY_FILE) {
+        let v = fs.read(HISTORY_FILE).parse_json()
+        if v != nil { history = v }
+    }
+}
+
+
+// 返回某 uid 的历史版本列表（最新在前）。
+fn history_of(uid) {
+    let list = history[uid]
+    if list == nil { return [] }
+    return list
+}
+
+
+// 返回历史版本数量。
+fn history_count(uid) {
+    return history_of(uid).len()
+}
+
+
+// 构造「已取消」版本的事件对象。不直接写 events[k]，以守住院门唯一写入点。
+fn build_cancelled_event(e) {
+    return {
+        uid: e.uid, summary: e.summary,
+        dtstart: e.dtstart, dtend: e.dtend,
+        location: e.location, description: e.description,
+        organizer: e.organizer, status: "CANCELLED",
+        sequence: e.sequence + 1,
+        rrule: e.rrule, exdate: e.exdate, rdate: e.rdate,
+        dtstamp: now_dtstamp(),
+        all_day: e.all_day, start_utc: e.start_utc, timezone: e.timezone,
+        extra: e.extra, extra_kinds: e.extra_kinds,
+        start_minutes: e.start_minutes, end_minutes: e.end_minutes
+    }
+}
+
+
+// 构造「从历史版本恢复」的事件对象。不直接写 events[k]，以守住院门唯一写入点。
+fn build_restored_event(target) {
+    return {
+        uid: target.uid, summary: target.summary,
+        dtstart: target.dtstart, dtend: target.dtend,
+        location: target.location, description: target.description,
+        organizer: target.organizer, status: target.status,
+        sequence: target.sequence + 1,
+        rrule: target.rrule, exdate: target.exdate, rdate: target.rdate,
+        dtstamp: now_dtstamp(),
+        all_day: target.all_day, start_utc: target.start_utc, timezone: target.timezone,
+        extra: target.extra, extra_kinds: target.extra_kinds,
+        start_minutes: target.start_minutes, end_minutes: target.end_minutes
+    }
+}
+
+
+// 回滚到指定历史版本（0 = 最新快照，即上一次改期前的状态）。
+// 回滚本身也会生成一个新的当前版本快照，因此用户可以「回滚后再回滚」。
+fn restore_event_version(uid, idx) {
+    if uid == "" { return 0 }
+    let list = history_of(uid)
+    if idx < 0 || idx >= list.len() {
+        set_status_warn("没有该历史版本")
+        return 0
+    }
+    let target = list[list.len() - 1 - idx].event
+    for k in events.len() {
+        if events[k].uid != uid { continue }
+        // 先快照当前状态
+        push_event_history(events[k])
+        // 用目标版本重建当前事件，但递增 SEQUENCE / 刷新 DTSTAMP，
+        // 让回滚在 ICS 语义上是一次「修订」而非静默篡改。
+        events[k] = build_restored_event(target)
+        save()
+        maybe_rescan()
+        set_status_ok("已回滚到 " + pretty_date(date_of(target.dtstart)) + " " + time_range(target))
+        return 1
+    }
+    set_status_warn("事件已不存在，无法回滚")
+    return 0
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.6 · 取消日程后自动释放时间块
+//
+// AI 排程 / 待办转日程产生的事件标记为 auto；当用户取消某个日程时，
+// 系统尝试把所有 auto 事件往更早的空档紧凑排列，真正「释放」被取消的时间。
+//════════════════════════════════════════════════════════════════
+
+
+// 把 uid 加入自动排布集合。
+fn mark_auto(uid) {
+    if uid == "" { return }
+    let token = " " + uid + " "
+    if auto_events.search(token) >= 0 { return }
+    if auto_events == " " { auto_events = token }
+    else { auto_events = auto_events + uid + " " }
+    save_auto_events()
+}
+
+
+// 从自动排布集合移除 uid（取消后事件本身已被标 CANCELLED，这里只是清理）。
+fn unmark_auto(uid) {
+    if uid == "" { return }
+    let token = " " + uid + " "
+    if auto_events.search(token) < 0 { return }
+    auto_events = auto_events.replace(token, " ")
+    if auto_events.trim() == "" { auto_events = " " }
+    save_auto_events()
+}
+
+
+fn is_auto(uid) {
+    return auto_events.search(" " + uid + " ") >= 0
+}
+
+
+fn save_auto_events() {
+    fs.write(AUTO_EVENTS_FILE, auto_events.to_json())
+}
+
+
+fn load_auto_events() {
+    if fs.exists(AUTO_EVENTS_FILE) {
+        let v = fs.read(AUTO_EVENTS_FILE).parse_json()
+        if v != nil { auto_events = v }
+    }
+    if auto_events == "" { auto_events = " " }
+}
+
+
+// 为一个时长 dur 分钟的事件，从 start_day 起向后 14 天找最早的可用空档。
+// 搜索窗口 09:00-21:00，步进 30 分钟。返回 {d8, start, end} 或 nil。
+fn find_earliest_slot(dur, start_day, skip_uid) {
+    if dur <= 0 { dur = 30 }
+    let d = start_day
+    for attempt in 0..14 {
+        let tt = 540
+        while tt + dur <= 1260 {
+            if check_conflict_for_slot(d, tt, tt + dur, skip_uid).len() == 0 {
+                return { d8: d, start: tt, end: tt + dur }
+            }
+            tt = tt + 30
+        }
+        d = add_days(d, 1)
+    }
+    return nil
+}
+
+
+// 取消一个日程：status 改为 CANCELLED，保存，然后尝试重新紧凑排布 auto 事件。
+fn cancel_event(uid) {
+    if uid == "" { return 0 }
+    for k in events.len() {
+        if events[k].uid != uid { continue }
+        let e = events[k]
+        if e.status == "CANCELLED" {
+            set_status_warn("该日程已经是取消状态")
+            return 0
+        }
+        // 取消前也记一笔历史，方便用户反悔
+        push_event_history(e)
+        events[k] = build_cancelled_event(e)
+        save()
+        rebalance_auto_events()
+        maybe_rescan()
+        set_status_ok("已取消「" + e.summary + "」，自动事件已重新紧凑排布")
+        return 1
+    }
+    set_status_warn("事件不存在")
+    return 0
+}
+
+
+// 重新紧凑排布所有标记为 auto 且未取消的事件。
+// 规则：只把事件往**更早**的空档挪；若找不到更早的空档则保持原位；
+// 全天/重复事件不动；所有移动都走 reschedule() 以复用其校验与历史快照。
+fn rebalance_auto_events() {
+    let moved = 0
+    let today = today8()
+    for k in events.len() {
+        let e = events[k]
+        if e.status == "CANCELLED" { continue }
+        if !is_auto(e.uid) { continue }
+        if e.all_day { continue }
+        if e.rrule != "" { continue }
+        let dur = e.end_minutes - e.start_minutes
+        if dur <= 0 { dur = 30 }
+        let slot = find_earliest_slot(dur.to_f64(), today, e.uid)
+        if slot == nil { continue }
+        // 当前事件的绝对开始分钟
+        let cur_start = date_num(e.dtstart) * 1440 + e.start_minutes
+        let new_start = slot.d8.to_f64() * 1440 + slot.start
+        if new_start >= cur_start { continue }
+        // 用 reschedule 移动，它会再生成一个历史版本
+        if reschedule(e.uid, slot.d8, slot.start, slot.end) == 1 {
+            moved = moved + 1
+        }
+    }
+    if moved > 0 {
+        save()
+    }
 }
 
 
@@ -9966,6 +10290,10 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     draw_text.text_style: theme.font_bold{font_size: 13}}
                 detail_meta := Label{width: Fill text: "" draw_text.color: c_ink3
                     draw_text.text_style: theme.font_regular{font_size: 11}}
+                detail_cancel_btn := ButtonFlat{text: "取消日程" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || detail_cancel_current()
+                    draw_bg +: {border_radius: 6.0 color: c_warn color_hover: #xc44a2c color_down: #xc44a2c
+                        color_focus: c_warn border_size: 1.0 border_color: c_warn border_color_focus: c_warn}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff color_disabled: c_ink3}}
                 ButtonFlat{text: "关闭" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || close_detail()
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
@@ -9986,6 +10314,10 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
                 ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ButtonFlat{text: "历史" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(4)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
@@ -10029,6 +10361,34 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 }
                 detail_link_list := Label{width: Fill text: "" draw_text.color: c_ink2
                     draw_text.text_style: theme.font_regular{font_size: 11}}
+            }
+            // 历史页（v0.5.6）
+            detail_history_page := RoundedView{width: Fill height: Fit flow: Down spacing: 6 draw_bg +: {color: c_paper}
+                detail_history_list := Label{width: Fill text: "" draw_text.color: c_ink2
+                    draw_text.text_style: theme.font_regular{font_size: 11}}
+                // 静态声明 5 个回滚按钮，超出部分不显示。历史最多 5 版，刚好够用。
+                RoundedView{width: Fill height: Fit flow: Down spacing: 4 draw_bg +: {color: c_paper}
+                    detail_history_btn0 := ButtonFlat{text: "回滚到此版本" width: Fill height: 26.0 padding: Inset{left: 10 right: 10} on_click: || restore_event_version(detail_uid, 0)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                    detail_history_btn1 := ButtonFlat{text: "回滚到此版本" width: Fill height: 26.0 padding: Inset{left: 10 right: 10} on_click: || restore_event_version(detail_uid, 1)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                    detail_history_btn2 := ButtonFlat{text: "回滚到此版本" width: Fill height: 26.0 padding: Inset{left: 10 right: 10} on_click: || restore_event_version(detail_uid, 2)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                    detail_history_btn3 := ButtonFlat{text: "回滚到此版本" width: Fill height: 26.0 padding: Inset{left: 10 right: 10} on_click: || restore_event_version(detail_uid, 3)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                    detail_history_btn4 := ButtonFlat{text: "回滚到此版本" width: Fill height: 26.0 padding: Inset{left: 10 right: 10} on_click: || restore_event_version(detail_uid, 4)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                }
             }
         }
     }
