@@ -1560,11 +1560,15 @@ fn build_advice(conflicts, list) {
 let ai_state = 0          // 0 未请求 / 1 请求中 / 2 已得方案 / 3 不可用或被闸拦下
 let ai_plan = nil         // 通过 1-5 闸的方案 {mover, day, start, end, reason}
 let ai_why = ""           // 模型的说明（一句，≤ 60 字）
+let ai_keep_why = ""      // v0.5.4：模型对「为什么保留固定事件」的权重解读（≤ 120 字，只展示不判定）
 let ai_reject = ""        // 被哪道闸拦下 + 原因（界面上必须说清楚，不能静默回退）
 
 // 单次调用上限。宿主侧默认 6 次/分钟、100 次/UTC 日、10 万 token。
 // 应用侧再收一道：单次导入的冲突建议一次只问一条，避免把预算烧光。
-let AI_TASK = "你在帮一个日历应用解决时间冲突。规则引擎已经选定了一条「可移动」的事件，并给出了一个可用空档。你可以给出更好的安排，也可以同意规则引擎。严格按要求输出，不要输出 URL。"
+// v0.5.4：复赛评委建议「让模型再往前一步」——除建议时段外，同时要求模型
+// 生成「为什么保留固定事件」的权重解读文案。写入仍走 reschedule 唯一入口、
+// 仍过七道闸；keep_why 只是给人看的解释，不参与任何判定。
+let AI_TASK = "你在帮一个日历应用解决时间冲突。规则引擎已经选定了一条「可移动」的事件，并给出了一个可用空档。你可以给出更好的安排，也可以同意规则引擎。除建议时段外，请解释：①为什么应该保留那条固定事件（结合它的承诺权重，例如含「截止/答辩」的是硬承诺）；②你建议的时段好在哪里。严格按要求输出，不要输出 URL。"
 
 // ★ 超时兜底（2026-10-10 实测踩到，**必留**）。
 //   本机 card-host **不注册** model 服务：host.request 既不立刻回失败，
@@ -1674,6 +1678,7 @@ fn ai_expired(token) {
     ai_state = 3
     ai_plan = nil
     ai_why = ""
+    ai_keep_why = ""
     ai_reject = "本机没有可用的模型服务（12 秒无响应）"
     set_status_warn("模型服务无响应 · 规则建议照常可用")
     sync_conflict()
@@ -1691,6 +1696,7 @@ fn ask_model() {
         ai_state = 3
         ai_plan = nil
         ai_why = ""
+        ai_keep_why = ""
         ai_reject = "本机未授予 model 能力"
         set_status_warn("本机未授予 model 能力 · 规则建议照常可用")
         sync_conflict()
@@ -1740,7 +1746,7 @@ fn ask_model() {
         }
         schema: {
             type: "object"
-            required: ["mover" "day" "start" "end" "reason"]
+            required: ["mover" "day" "start" "end" "reason" "keep_why"]
             additionalProperties: false
             properties: {
                 mover: {type: "string" maxLength: 128}
@@ -1748,6 +1754,7 @@ fn ask_model() {
                 start: {type: "integer" minimum: 0 maximum: 1440}
                 end: {type: "integer" minimum: 0 maximum: 1440}
                 reason: {type: "string" maxLength: 60}
+                keep_why: {type: "string" maxLength: 120}
             }
         }
         class: "strong"
@@ -1760,6 +1767,7 @@ fn ask_model() {
             ai_state = 3
             ai_plan = nil
             ai_why = ""
+            ai_keep_why = ""
             // ★ 2026-10-11（v0.5.2 W2-3）：界面**不显示** r.error 原文。
             //   原来这里是 `"模型不可用（" + r.error + "）"` —— 把宿主/模型服务
             //   的原始错误串直入用户可见文案。风险有三层：
@@ -1781,6 +1789,8 @@ fn ask_model() {
             ai_state = 3
             ai_plan = nil
             ai_why = o.reason
+            // ⚠️ 被闸拦下时 keep_why 也可能是模型瞎编的，一律不展示
+            ai_keep_why = ""
             ai_reject = "未采纳：" + bad
             set_status_warn("模型方案未通过校验（" + bad + "）· 已回退规则建议")
             sync_conflict()
@@ -1794,6 +1804,8 @@ fn ask_model() {
             reason: o.reason
         }
         ai_why = o.reason
+        // keep_why 过了七道闸才展示 —— 闸过的方案配闸过的解释
+        ai_keep_why = "" + o.keep_why
         ai_reject = ""
         ai_state = 2
         set_status_ok("模型给出了一个方案 · 核对无误再采纳")
@@ -2069,6 +2081,12 @@ fn sync_card() {
     ui.card_slot0.set_visible(a.slots.len() > 0)
     ui.card_slot1.set_visible(a.slots.len() > 1)
     ui.card_slot2.set_visible(a.slots.len() > 2)
+    // v0.5.4：模型解读（过了七道闸的方案才展示模型的权重解释）
+    if ai_state == 2 && ai_keep_why != "" {
+        ui.card_ai_note.set_text("模型解读 · " + ai_keep_why)
+    } else {
+        ui.card_ai_note.set_text("")
+    }
 }
 
 
@@ -9185,6 +9203,11 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     draw_bg +: {border_radius: 6.0 color: c_accent color_hover: #xa3431a color_down: #xa3431a
                         color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
                     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+            // v0.5.4：模型解读 —— 模型对「为什么保留固定事件」的权重说明。
+            // ⚠️ 只在方案过了七道闸（ai_state == 2）后展示，被闸拦下的解释不采信。
+            // ⚠️ 卡片视图是 height: Fit 的独立面板，多两行不会挤掉常驻控件。
+            card_ai_note := Label{width: Fill text: "" draw_text.color: c_accent
+                draw_text.text_style: theme.font_regular{font_size: 11}}
             }
         }
     }
@@ -9211,7 +9234,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
-                    Label{width: Fill text: "版本 0.5.3 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                    Label{width: Fill text: "版本 0.5.4 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
                 }
             }
             Hr{draw_bg +: {color: c_line border_size: 0.0 height: 1.0}}
