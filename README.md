@@ -713,39 +713,39 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.2`（**把「静默丢弃」与「静默错算」改成「明说」**：未知属性原样留存、改期递增 SEQUENCE、全天事件不再给无效建议、节假日数据收敛到已核实的年份；**已知限制**见下方专门一节） |
+| 版本 | `0.5.4`（**模型可解释性**：模型不只给改期时段，还生成「为什么保留固定事件」的权重解读，过七道闸才展示；邮件读取数量可设；演示视频重录，往返 0/0/4 真实呈现） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
-| 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model`（**不含** `location`） |
-| 发布基准 | GitHub Release [`v0.5.2`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.2)（id 409535893；tag = `main` = `57573c1`；2026-10-11）· digest `767ca5cf7cf06a63…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-11） |
-| 验证 | 静态门禁 **13 项**全过 · 七道闸夹具 **38/38** · 全量回归 **8/8 PASS**（8 条流程全部「编译/运行错误数: 0」）· 未知属性往返 **20/20** · **往返无损 0/0/N** |
-| 提交 issue | [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
+| 发布基准 | GitHub Release [`v0.5.4`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.4)（id 410209599；tag = `v0.5.4` = `d1230d0`；2026-10-12）· digest `cc8178644ffce785…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-12；下载件同样 PASSED 且与仓库逐字节一致） |
+| 验证 | 静态门禁 **13 项**全过 · 七道闸夹具 **38/38** · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/4**）· 宿主 `[E]` **0** |
+| 提交 issue | [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ★ 当前权威值 = v0.5.2（2026-10-11）
+### ★ 当前权威值 = v0.5.4（2026-10-12）
 
 > 本README 里**只有这一节**是当前权威值。其余「历史记录」节的 digest / signature 均已作废，
 > 只为追溯留档，不可作为发布基准。
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `57573c1`（分支 `main`，已 fast-forward 并入） |
-| Tag | `v0.5.2` |
-| capabilities | `["storage", "net", "model"]`（**不含** `location`） |
+| Commit | `d1230d0`（分支 `v0.5.4`，已合入 main） |
+| Tag | `v0.5.4` |
+| capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
-| 验证 | 静态门禁 **13 项** · 全量回归 **8/8** · 8 条流程宿主 `[E]` **0** · 未知属性往返 **20/20** |
-| 往返无损 | 新增 0 / 改期 0 / 跳过 N（加了 SEQUENCE 递增与未知属性留存之后**仍然成立**） |
-| Bundle blake3 | `767ca5cf7cf06a63c552a771c78426f9aad02d1b4b5b2c1ce80a08ed308f1f19` |
-| Publisher key id | `OMA`（沿用 v0.4.1 / v0.5.0 / v0.5.1 同一把，保持更新链连续） |
-| Release | [`v0.5.2`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.2)（id 409535893） |
-| Zip | `octosense-calendar-0.5.2.zip` · 2,659,789 bytes（23 files） |
-| Zip sha256 | `0432bb12d946f3fe1001c148fdb8ed707f8689f02a6eb7a018dd18ae2c5b4f86` |
-| 提交 issue | [#212](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) |
+| 验证 | 静态门禁 **13 项** · 七道闸夹具 **38/38** · `run_e2e` **10/10** · `run_conflict` **21/21** · 8 条流程宿主 `[E]` **0** |
+| 往返无损 | 新增 0 / 改期 0 / 跳过 N（模型参与改期 + SEQUENCE 递增之后**仍然成立**） |
+| Bundle blake3 | `cc8178644ffce785b8ecd2208ee28923ebb3d595e9b5b9c94e212404c588950a` |
+| Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |
+| Release | [`v0.5.4`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.4)（id 410209599） |
+| Zip | `octosense-calendar-0.5.4-bundle.zip` · 2,663,147 bytes |
+| Zip sha256 | `10e9c41a4aae6be534b9f20690389b5c39144850856dec1b18198c6661e0adfd` |
+| 提交 issue | [#217](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) |
 
-**`hub check` 已跑过**（2026-10-11）：
+**`hub check` 已跑过**（2026-10-12）：
 
 ```
-com.oma.octosense.calendar 0.5.2 — PASSED
-  grants: capabilities {"model", "net", "storage"},
+com.oma.octosense.calendar 0.5.4 — PASSED
+  grants: capabilities {"mail", "model", "net", "storage"},
           hosts {"api.open-meteo.com", "geocoding-api.open-meteo.com"},
           storage 16777216 bytes, agent none
 ```
@@ -756,10 +756,38 @@ com.oma.octosense.calendar 0.5.2 — PASSED
 hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
 ```
 
-**五处一致性（2026-10-11 逐处实测）**：本地工作区 · git `main` · tag 指向的
-commit · Release zip 解包件 · 从 Release 下载回来的 zip —— 五处的
-`bundle_blake3` 全部等于 `767ca5cf…`，`diff -r` 无差异，
+**四处一致性（2026-10-12 逐处实测）**：本地工作区 · git `v0.5.4` 分支 HEAD ·
+Release zip 解包件 · 从 Release 下载回来的 zip —— 四处的
+`bundle_blake3` 全部等于 `cc817864…`，`diff -r` 无差异，
 后两者 `hub check` 均 PASSED。
+
+**本版要点**（详见上方「v0.5.4 更新日志」节）：
+
+- **模型可解释性**：`model.complete` 新增 `keep_why` 字段，模型解释「为什么保留固定事件」；
+  方案过七道闸后解读展示在卡片视图，被闸拦下的解释不采信。
+- **演示视频重录**：旧版录制存在静默失败（画面与字幕不符）；修复驱动脚本三处问题后重录，
+  「新增 0 / 改期 0 / 跳过 4」在画面中真实呈现。
+- **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
+
+详见 [`docs/REALHOST-CHECKLIST-v0.5.4.md`](docs/REALHOST-CHECKLIST-v0.5.4.md)（model.complete 真机验证清单）。
+
+### v0.5.3（历史记录，**已作废**）
+
+v0.5.3（commit `3d1b20e`，App Hub [#216](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216)）：
+补齐官方指南 04 App Card 模拟视图 / 05 Mail 上下文 / 07 触发时机自动扫描。
+bundle blake3 `605ecdc0d5bb7b0f…` · Release id 410056868。
+
+### v0.5.2（历史记录，**已作废**）
+
+| 字段 | 值 |
+| --- | --- |
+| Commit | `57573c1`（分支 `main`） |
+| Tag | `v0.5.2` |
+| capabilities | `["storage", "net", "model"]` |
+| Bundle blake3 | `767ca5cf7cf06a63c552a771c78426f9aad02d1b4b5b2c1ce80a08ed308f1f19` |
+| Release | [`v0.5.2`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.2)（id 409535893） |
+| Zip sha256 | `0432bb12d946f3fe1001c148fdb8ed707f8689f02a6eb7a018dd18ae2c5b4f86` |
+| 提交 issue | [#212](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) |
 
 **本版要点**：
 
