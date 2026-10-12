@@ -2503,6 +2503,13 @@ fn refresh_all() {
     ui.td_a4.set_visible(todo_mode == 2)
     ui.td_r5.set_visible(todo_mode == 2)
     ui.td_a5.set_visible(todo_mode == 2)
+    // ★ v0.5.5：「排期」按钮在当天待办（非复盘）模式下显示。
+    ui.td_s0.set_visible(todo_mode != 2)
+    ui.td_s1.set_visible(todo_mode != 2)
+    ui.td_s2.set_visible(todo_mode != 2)
+    ui.td_s3.set_visible(todo_mode != 2)
+    ui.td_s4.set_visible(todo_mode != 2)
+    ui.td_s5.set_visible(todo_mode != 2)
     // ── 心情 ──
     ui.mood_where.set_text("当前：" + focus_mmdd())
     ui.mood_month.set_text(mood_month_note())
@@ -2514,12 +2521,15 @@ fn refresh_all() {
     ui.goal_card2.set_visible(goal_card_visible(2))
     ui.gc_t0.set_text(goal_title(0))
     ui.gc_p0.set_text(goal_progress(0))
+    ui.gc_d0.set_text(goal_due(0))
     ui.gc_bar0.set_text(goal_bar(0))
     ui.gc_t1.set_text(goal_title(1))
     ui.gc_p1.set_text(goal_progress(1))
+    ui.gc_d1.set_text(goal_due(1))
     ui.gc_bar1.set_text(goal_bar(1))
     ui.gc_t2.set_text(goal_title(2))
     ui.gc_p2.set_text(goal_progress(2))
+    ui.gc_d2.set_text(goal_due(2))
     ui.gc_bar2.set_text(goal_bar(2))
     ui.gs_b00.set_text(goal_sub_mark(0, 0))
     ui.gs_t00.set_text(goal_sub_label(0, 0))
@@ -2603,8 +2613,105 @@ fn refresh_all() {
     //   面板标题「天气按城市取 · 不做自动定位」承担了语义说明。
     ui.wx_city_btn.set_text(city_label())
     ui.city_msg.set_text(wx_city_msg)
+    // ── v0.5.5：AI 排程面板状态同步 ──
+    sync_ai_sched_panel()
+    // ── v0.5.5：事件详情抽屉状态同步 ──
+    sync_detail_panel()
+    // ── v0.5.5：周报面板状态同步 ──
+    sync_report_panel()
     sync_conflict()
     sync_confirm()
+}
+
+
+// v0.5.5：同步 AI 排程面板的内部文案
+fn sync_ai_sched_panel() {
+    if ai_sched_state == 0 {
+        ui.ai_sched_title.set_text("AI 排程")
+        ui.ai_sched_hint.set_text("用一句话说出日程，例如「明天下午两点开会」")
+        ui.ai_sched_result.set_text("")
+        ui.ai_sched_alt.set_text("")
+        ui.ai_sched_ok.set_visible(false)
+    } else if ai_sched_state == 1 {
+        ui.ai_sched_title.set_text("AI 排程 · 解析中")
+        ui.ai_sched_hint.set_text("正在解析：" + ai_sched_text)
+        ui.ai_sched_result.set_text("")
+        ui.ai_sched_alt.set_text("")
+        ui.ai_sched_ok.set_visible(false)
+    } else if ai_sched_state == 2 {
+        let d = ai_sched_draft
+        ui.ai_sched_title.set_text("AI 排程 · 请确认")
+        ui.ai_sched_hint.set_text("「" + d.summary + "」")
+        let line = pretty_date(d.d8) + " " + pretty_time(d.start) + "-" + pretty_time(d.end)
+        if d.location != "" { line = line + " · 地点 " + d.location }
+        if d.participants != "" { line = line + " · 参与 " + d.participants }
+        if d.repeat > 0 { line = line + " · " + repeat_label(d.repeat.to_f64()) }
+        ui.ai_sched_result.set_text(line)
+        let alt = ""
+        if d.conflicts.len() > 0 {
+            alt = "冲突：" + d.conflicts[0]
+            if d.conflicts.len() > 1 { alt = alt + " 等" }
+        }
+        if ai_sched_alts.len() > 0 {
+            if alt != "" { alt = alt + " · " }
+            alt = alt + "替代时段："
+            for i in ai_sched_alts.len() {
+                if i > 0 { alt = alt + " / " }
+                let a = ai_sched_alts[i]
+                alt = alt + pretty_date(a.d8) + " " + pretty_time(a.start) + "-" + pretty_time(a.end)
+            }
+        }
+        ui.ai_sched_alt.set_text(alt)
+        ui.ai_sched_ok.set_visible(true)
+    } else {
+        ui.ai_sched_title.set_text("AI 排程 · 失败")
+        ui.ai_sched_hint.set_text(ai_sched_err)
+        ui.ai_sched_result.set_text("")
+        ui.ai_sched_alt.set_text("请检查输入或手动创建")
+        ui.ai_sched_ok.set_visible(false)
+    }
+}
+
+
+// v0.5.5：同步事件详情抽屉
+fn sync_detail_panel() {
+    ui.detail_title.set_text(detail_event_summary())
+    ui.detail_meta.set_text(detail_event_meta())
+    if detail_uid == "" { return }
+    let n = note_of(detail_uid)
+    ui.detail_note_in.set_text(n.note)
+    ui.detail_minutes_in.set_text(n.minutes)
+    ui.detail_follow_list.set_text(join_lines(n.followups))
+    ui.detail_link_list.set_text(join_lines(n.links))
+    // 标签页显隐
+    ui.detail_note_in.set_visible(detail_tab == 0)
+    ui.detail_minutes_in.set_visible(detail_tab == 1)
+    ui.detail_follow_page.set_visible(detail_tab == 2)
+    ui.detail_link_page.set_visible(detail_tab == 3)
+}
+
+
+// v0.5.5：返回 0=周一..6=周日的数字（用于周报计算）
+fn weekday_num(d8) {
+    if !valid8(d8) { return 0 }
+    let y = substr(d8, 0, 4).to_f64()
+    let m = substr(d8, 4, 6).to_f64()
+    let dd = substr(d8, 6, 8).to_f64()
+    let yy = y
+    let mm = m
+    if mm < 3 { mm = mm + 12; yy = yy - 1 }
+    let k = yy % 100
+    let j = ipart(yy / 100)
+    let h = (dd + ipart(13 * (mm + 1) / 5) + k + ipart(k / 4) + ipart(j / 4) + 5 * j) % 7
+    let mon0 = h - 2
+    if mon0 < 0 { mon0 = mon0 + 7 }
+    return mon0
+}
+
+
+// v0.5.5：同步周报面板
+fn sync_report_panel() {
+    ui.report_text.set_text(report_text)
 }
 
 
@@ -2655,6 +2762,8 @@ fn load() {
     // ★ 2026-10-01：先定「关注日」= 今天，再读旁路存储（待办/心情/目标/胶囊/共享）。
     init_focus()
     load_aux()
+    // ★ v0.5.5：读回事件详情笔记。
+    load_notes()
     // ★ v0.5.0：读回用户选定的天气城市（没有文件就是默认北京）。
     //   必须在 wx_live_load_cache / wx_live_fetch **之前** —— 那两个按当前坐标取数，
     //   坐标还没读回来就会先用北京的缓存上屏。
@@ -2956,6 +3065,625 @@ fn apply_advice() {
         set_status("建议未能应用（涉及全天事件，或当天没有够长的空档）")
     }
     refresh_all()
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.5 · 对话式 AI 排程
+//
+// 用户用自然语言创建日程，例如「下周三下午三点和张总开会，提前半小时提醒」。
+// 模型只负责把这句话解析成结构化草稿；写入事件库仍需用户确认，并经过与
+// v0.5.0 AI 改期相同的七道校验（形状/日期/时段/日历/用户同意/复核）。
+//
+// 设计约束：
+//   · 不自动外发邮件/邀请（宿主无可靠 API，且属于越权行为）
+//   · 不把用户日历详情泄漏给模型：模型输入只含「今天的日期」和「用户这句话」
+//   · 失败时明确降级：解析失败、冲突无法消解、没有可用时段都会明说
+//════════════════════════════════════════════════════════════════
+
+
+// 把 "HH:MM" 解析为当天分钟数；格式不对返回 -1
+fn time_to_min(t) {
+    let s = "" + t
+    if s.len() < 4 || s.len() > 5 { return -1 }
+    let c0 = s.search(":")
+    if c0 < 0 { return -1 }
+    let h = substr(s, 0, c0).to_f64()
+    let m = substr(s, c0 + 1, s.len()).to_f64()
+    if !(h >= 0 && h <= 23) { return -1 }
+    if !(m >= 0 && m <= 59) { return -1 }
+    return ipart(h * 60 + m)
+}
+
+
+// 检查目标时段是否与已有事件冲突。返回冲突事件标题数组（可能为空）。
+// 全天事件按整天占位；CANCELLED 事件忽略；被移动的事件自身忽略。
+fn check_conflict_for_slot(day, s, e, skip_uid) {
+    let out = []
+    if skip_uid == nil { skip_uid = "" }
+    for k in events.len() {
+        let ev = events[k]
+        if ev.status == "CANCELLED" { continue }
+        if ev.uid == skip_uid { continue }
+        if ev.all_day {
+            if date_num(ev.dtstart) == day.to_f64() {
+                out.push(ev.summary)
+            }
+            continue
+        }
+        let ss = day.to_f64() * 1440 + s
+        let se = day.to_f64() * 1440 + e
+        if se <= abs_start(ev) { continue }
+        if abs_end(ev) <= ss { continue }
+        out.push(ev.summary)
+    }
+    return out
+}
+
+
+// 为一段时长 dur 分钟，从 day 当天 09:00-21:00 开始、并向后搜索最多 7 天，
+// 返回最多 3 个可用空档 [{d8, start, end}]。
+fn propose_slots_for_draft(day, dur) {
+    let out = []
+    let d = day
+    for attempt in 0..8 {
+        if out.len() >= 3 { break }
+        let dim = days_in_month(substr(d, 0, 4).to_f64(), substr(d, 4, 6).to_f64())
+        let base = d.to_f64() * 1440
+        // 09:00 = 540, 21:00 = 1260
+        let t = 540
+        while t + dur <= 1260 {
+            if check_conflict_for_slot(d, t, t + dur, "").len() == 0 {
+                out.push({ d8: d, start: t, end: t + dur })
+                if out.len() >= 3 { break }
+                t = t + dur
+            } else {
+                t = t + 30
+            }
+        }
+        d = add_days(d, 1)
+    }
+    return out
+}
+
+
+// 把自然语言草稿应用到事件库：新事件直接创建，已有 uid 则改期。
+fn apply_ai_schedule() {
+    if ai_sched_state != 2 || ai_sched_draft == nil {
+        set_status_warn("还没有可确认的日程草稿")
+        return
+    }
+    let d = ai_sched_draft
+    // 最终校验
+    if !valid8(d.d8) || !ics_date_ok(d.d8) {
+        set_status_warn("日期无效，未能写入")
+        ai_sched_state = 3
+        ai_sched_err = "日期校验失败"
+        refresh_all()
+        return
+    }
+    if d.start < 0 || d.end > 1440 || d.end <= d.start {
+        set_status_warn("时段无效，未能写入")
+        ai_sched_state = 3
+        ai_sched_err = "时段校验失败"
+        refresh_all()
+        return
+    }
+    if d.summary.trim() == "" {
+        set_status_warn("标题为空，未能写入")
+        ai_sched_state = 3
+        ai_sched_err = "标题为空"
+        refresh_all()
+        return
+    }
+    let hits = check_conflict_for_slot(d.d8, d.start, d.end, d.uid)
+    if hits.len() > 0 {
+        set_status_warn("与「" + hits[0] + "」冲突，请换时段")
+        ai_sched_state = 3
+        ai_sched_err = "与现有日程冲突"
+        refresh_all()
+        return
+    }
+
+    if d.uid != "" && d.uid != "NEW" {
+        // 改期已有事件
+        let n = reschedule(d.uid, d.d8, d.start, d.end)
+        if n == 0 {
+            set_status_warn("未能改期（事件不存在或为全天/重复事件）")
+            ai_sched_state = 3
+            ai_sched_err = "改期失败"
+            refresh_all()
+            return
+        }
+    } else {
+        // 新建事件
+        new_seq = new_seq + 1
+        let ev = new_event()
+        ev.uid = "ai-" + d.d8 + "-" + ("" + new_seq)
+        ev.summary = d.summary
+        ev.dtstart = d.d8 + "T" + clock_compact(d.start) + "00"
+        ev.dtend = d.d8 + "T" + clock_compact(d.end) + "00"
+        ev.all_day = false
+        ev.timezone = ""
+        ev.rrule = repeat_rule(d.repeat)
+        ev.dtstamp = now_dtstamp()
+        events.push(ev)
+    }
+
+    save()
+    maybe_rescan()
+    set_status_ok("已写入「" + d.summary + "」· " + pretty_date(d.d8) + " " + pretty_time(d.start) + "-" + pretty_time(d.end))
+    ai_sched_open = false
+    ai_sched_state = 0
+    ai_sched_draft = nil
+    ai_sched_alts = []
+    sync_panels()
+    refresh_all()
+}
+
+
+fn cancel_ai_schedule() {
+    ai_sched_open = false
+    ai_sched_state = 0
+    ai_sched_draft = nil
+    ai_sched_alts = []
+    ai_sched_err = ""
+    ai_sched_text = ""
+    sync_panels()
+    refresh_all()
+}
+
+
+fn toggle_ai_schedule() {
+    ai_sched_open = !ai_sched_open
+    if ai_sched_open {
+        ai_sched_state = 0
+        ai_sched_draft = nil
+        ai_sched_alts = []
+        ai_sched_err = ""
+        ai_sched_text = ""
+    }
+    sync_panels()
+    refresh_all()
+}
+
+
+// 请求模型解析自然语言日程。模型只返回结构化草稿，不直接写事件库。
+fn parse_nl_schedule() {
+    let text = ui.ai_in.text().trim()
+    if text == "" {
+        set_status_warn("先写一句话，比如「明天下午两点开会」")
+        refresh_all()
+        return
+    }
+    ai_sched_text = text
+    ai_sched_state = 1
+    ai_sched_err = ""
+    ai_sched_draft = nil
+    ai_sched_alts = []
+    ai_sched_token = ai_sched_token + 1
+    set_status("正在解析…")
+    refresh_all()
+
+    let token = ai_sched_token
+    let prompt = "你在帮一个日历应用解析用户的自然语言日程。今天是 " + today8() + "（" + focus_weekday() + "）。请从用户输入中提取以下字段，按 strict JSON schema 输出。day_offset 是相对于今天的天数偏移：0=今天，1=明天，2=后天，7=下周同一天，-1=昨天。start_time 用 24 小时制 HH:MM。participants 用逗号分隔，没有就空字符串。priority 映射：0 常规，1 重要，2 紧急，3 纪念。repeat_kind 映射：0 不重复，1 每天，2 每周，3 每月，4 每年。duration_minutes 默认 60，reminder_minutes 默认 0。不要输出解释、URL 或 markdown。"
+
+    host.request("model.complete", {
+        task: prompt
+        input: { user_text: text, today: today8(), weekday: focus_weekday() }
+        schema: {
+            type: "object"
+            required: ["summary" "day_offset" "start_time" "duration_minutes" "repeat_kind" "priority"]
+            additionalProperties: false
+            properties: {
+                summary: { type: "string" maxLength: 128 }
+                day_offset: { type: "integer" minimum: -1 maximum: 30 }
+                start_time: { type: "string" pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$" }
+                duration_minutes: { type: "integer" minimum: 5 maximum: 480 }
+                reminder_minutes: { type: "integer" minimum: 0 maximum: 10080 }
+                repeat_kind: { type: "integer" minimum: 0 maximum: 4 }
+                priority: { type: "integer" minimum: 0 maximum: 3 }
+                participants: { type: "string" maxLength: 128 }
+                location: { type: "string" maxLength: 128 }
+            }
+        }
+        class: "strong"
+    }, fn(r) {
+        if token != ai_sched_token { return }
+        if !r.is_ok {
+            ai_sched_state = 3
+            ai_sched_err = "模型不可用（" + model_err_text(r.error) + "）"
+            set_status_warn("AI 解析失败 · 请手动创建")
+            refresh_all()
+            return
+        }
+        let o = r.data.output
+        let d8 = add_days(today8(), o.day_offset.to_f64())
+        let sm = time_to_min(o.start_time)
+        if sm < 0 {
+            ai_sched_state = 3
+            ai_sched_err = "模型返回的时间格式不对"
+            set_status_warn("AI 解析失败 · 请手动创建")
+            refresh_all()
+            return
+        }
+        let dur = o.duration_minutes.to_f64()
+        if dur <= 0 || dur > 480 { dur = 60 }
+        let em = sm + dur
+        if em > 1440 { em = 1440 }
+
+        let conflicts = check_conflict_for_slot(d8, sm, em, "")
+        let alts = []
+        if conflicts.len() > 0 {
+            alts = propose_slots_for_draft(d8, dur)
+        }
+
+        ai_sched_draft = {
+            uid: "NEW",
+            summary: "" + o.summary,
+            d8: d8,
+            start: sm,
+            end: em,
+            dur: dur,
+            repeat: o.repeat_kind.to_f64(),
+            remind_min: o.reminder_minutes.to_f64(),
+            priority: o.priority.to_f64(),
+            participants: "" + o.participants,
+            location: "" + o.location,
+            conflicts: conflicts
+        }
+        ai_sched_alts = alts
+        ai_sched_state = 2
+        if conflicts.len() > 0 {
+            set_status_warn("解析完成 · 发现冲突，请选替代时段或确认")
+        } else {
+            set_status_ok("解析完成 · 请确认写入")
+        }
+        refresh_all()
+    })
+}
+
+
+// 采纳第 k 个替代时段（0..2）替换草稿里的时间。
+fn ai_use_alt(k) {
+    if ai_sched_state != 2 || ai_sched_draft == nil { return }
+    if k < 0 || k >= ai_sched_alts.len() { return }
+    let a = ai_sched_alts[k]
+    ai_sched_draft.d8 = a.d8
+    ai_sched_draft.start = a.start
+    ai_sched_draft.end = a.end
+    ai_sched_draft.conflicts = []
+    set_status_ok("已切换到替代时段 · 请确认写入")
+    refresh_all()
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.5 · 待办一键转日程
+//
+// 点击待办行右侧「排期」按钮，按内容估算时长，自动挑选未来空档并生成事件。
+// 原待办保留，用户可手动删除。
+//════════════════════════════════════════════════════════════════
+
+
+fn todo_schedule(k) {
+    let v = todo_view()
+    if k < 0 || k >= v.len() {
+        set_status_warn("待办不存在")
+        return
+    }
+    let t = todos[v[k]]
+    let dur = 60
+    let txt = t.text
+    if txt.search("会") >= 0 || txt.search("讨论") >= 0 || txt.search("评审") >= 0 {
+        dur = 30
+    }
+    let d8 = today8()
+    let slot = nil
+    let attempts = 0
+    while attempts < 8 {
+        let base = d8.to_f64() * 1440
+        let tt = 540
+        while tt + dur <= 1260 {
+            if check_conflict_for_slot(d8, tt, tt + dur, "").len() == 0 {
+                slot = { d8: d8, start: tt, end: tt + dur }
+                break
+            }
+            tt = tt + 30
+        }
+        if slot != nil { break }
+        d8 = add_days(d8, 1)
+        attempts = attempts + 1
+    }
+    if slot == nil {
+        set_status_warn("未来 7 天找不到 " + ("" + dur) + " 分钟空档")
+        refresh_all()
+        return
+    }
+    new_seq = new_seq + 1
+    let ev = new_event()
+    ev.uid = "todo-" + slot.d8 + "-" + ("" + new_seq)
+    ev.summary = t.text
+    ev.dtstart = slot.d8 + "T" + clock_compact(slot.start) + "00"
+    ev.dtend = slot.d8 + "T" + clock_compact(slot.end) + "00"
+    ev.all_day = false
+    ev.timezone = ""
+    ev.rrule = ""
+    ev.dtstamp = now_dtstamp()
+    events.push(ev)
+    save()
+    maybe_rescan()
+    set_status_ok("已把待办排进 " + pretty_date(slot.d8) + " " + pretty_time(slot.start) + "-" + pretty_time(slot.end))
+    refresh_all()
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.5 · 事件详情页（笔记 / 纪要 / 跟进 / 链接）
+//
+// 每个事件对应一个笔记对象，持久化到 event-notes.json。
+// 笔记数据不参与 ICS 导出，只在本机 storage 留存。
+//════════════════════════════════════════════════════════════════
+
+
+fn open_detail(uid) {
+    if uid == "" { return }
+    detail_uid = uid
+    detail_open = true
+    detail_tab = 0
+    sync_panels()
+    refresh_all()
+}
+
+
+fn close_detail() {
+    detail_save_current()
+    detail_open = false
+    detail_uid = ""
+    sync_panels()
+    refresh_all()
+}
+
+
+fn set_detail_tab(i) {
+    detail_save_current()
+    detail_tab = i
+    refresh_all()
+}
+
+
+// 保存当前输入框里的内容到 notes[detail_uid]
+fn detail_save_current() {
+    if detail_uid == "" { return }
+    let n = note_of(detail_uid)
+    if detail_tab == 0 {
+        n.note = ui.detail_note_in.text()
+    } else if detail_tab == 1 {
+        n.minutes = ui.detail_minutes_in.text()
+    }
+    notes[detail_uid] = n
+    save_notes()
+}
+
+
+fn note_of(uid) {
+    let n = notes[uid]
+    if n == nil { return { note: "", minutes: "", followups: [], links: [] } }
+    // 老数据可能缺字段，补齐
+    if n.note == nil { n.note = "" }
+    if n.minutes == nil { n.minutes = "" }
+    if n.followups == nil { n.followups = [] }
+    if n.links == nil { n.links = [] }
+    return n
+}
+
+
+fn save_notes() {
+    fs.write(NOTES_FILE, notes.to_json())
+}
+
+
+fn load_notes() {
+    if fs.exists(NOTES_FILE) {
+        let v = fs.read(NOTES_FILE).parse_json()
+        if v != nil { notes = v }
+    }
+}
+
+
+fn detail_add_follow() {
+    if detail_uid == "" { return }
+    let t = ui.detail_follow_in.text().trim()
+    if t == "" { return }
+    let n = note_of(detail_uid)
+    let fs = []
+    for i in n.followups.len() { fs.push(n.followups[i]) }
+    fs.push(t)
+    n.followups = fs
+    notes[detail_uid] = n
+    save_notes()
+    ui.detail_follow_in.set_text("")
+    refresh_all()
+}
+
+
+fn detail_add_link() {
+    if detail_uid == "" { return }
+    let t = ui.detail_link_in.text().trim()
+    if t == "" { return }
+    let n = note_of(detail_uid)
+    let ls = []
+    for i in n.links.len() { ls.push(n.links[i]) }
+    ls.push(t)
+    n.links = ls
+    notes[detail_uid] = n
+    save_notes()
+    ui.detail_link_in.set_text("")
+    refresh_all()
+}
+
+
+fn detail_event_summary() {
+    if detail_uid == "" { return "未选择事件" }
+    for k in events.len() {
+        if events[k].uid == detail_uid { return events[k].summary }
+    }
+    return "事件已删除"
+}
+
+
+fn detail_event_meta() {
+    if detail_uid == "" { return "" }
+    for k in events.len() {
+        if events[k].uid != detail_uid { continue }
+        let e = events[k]
+        let d = date_of(e.dtstart)
+        if e.all_day { return pretty_date(d) + " · 全天" }
+        return pretty_date(d) + " " + time_range(e)
+    }
+    return ""
+}
+
+
+// 查找 focus_d8 当天的第一个事件 uid，作为详情入口的默认目标。
+fn first_event_of_day(d8) {
+    let dl = display_list()
+    for i in dl.len() {
+        let e = dl[i]
+        if date_of(e.dtstart) == d8 { return e.uid }
+    }
+    return ""
+}
+
+
+fn open_detail_for_focus() {
+    let uid = first_event_of_day(focus_d8)
+    if uid == "" {
+        set_status_warn("这一天没有事件可查看")
+        return
+    }
+    open_detail(uid)
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// ★★★ v0.5.5 · OKR / 里程碑与手动周报
+//
+// 目标支持设置 deadline；周报汇总本周事件、已完成待办和目标进度，
+// 只展示、不自动外发。
+//════════════════════════════════════════════════════════════════
+
+
+fn goal_set_due(k, days) {
+    if k < 0 || k >= goals.len() { return }
+    let d = add_days(today8(), days)
+    let g = goals[k]
+    let ng = { uid: g.uid, title: g.title, due: d, subs: g.subs }
+    let out = []
+    for j in goals.len() {
+        if j == k { out.push(ng) }
+        else { out.push(goals[j]) }
+    }
+    goals = out
+    save_goals()
+    set_status_ok("期限设为 " + pretty_date(d))
+    refresh_all()
+}
+
+
+fn toggle_report() {
+    report_open = !report_open
+    if report_open { generate_weekly_report() }
+    sync_panels()
+    refresh_all()
+}
+
+
+fn close_report() {
+    report_open = false
+    sync_panels()
+    refresh_all()
+}
+
+
+fn generate_weekly_report() {
+    let t = today8()
+    let back = weekday_num(t)
+    // 回到本周一：weekday_num 0=周一..6=周日
+    let mon = add_days(t, -back)
+    let sun = add_days(mon, 6)
+
+    let lines = []
+    lines.push("# 周报 " + pretty_date(mon) + " ~ " + pretty_date(sun))
+    lines.push("")
+
+    // 本周事件
+    let evs = []
+    for i in events.len() {
+        let e = events[i]
+        let d = date_of(e.dtstart)
+        if d >= mon && d <= sun { evs.push(e) }
+    }
+    lines.push("## 本周日程（" + ("" + evs.len()) + " 项）")
+    for i in evs.len() {
+        let e = evs[i]
+        lines.push("- " + pretty_date(date_of(e.dtstart)) + " " + e.summary)
+    }
+    lines.push("")
+
+    // 已完成待办
+    lines.push("## 已完成待办")
+    let done = 0
+    for i in todos.len() {
+        let t = todos[i]
+        if t.done && t.d8 >= mon && t.d8 <= sun {
+            lines.push("- " + t.text)
+            done = done + 1
+        }
+    }
+    if done == 0 { lines.push("- 本周没有已完成待办") }
+    lines.push("")
+
+    // 目标进度
+    lines.push("## 目标进度")
+    if goals.len() == 0 {
+        lines.push("- 暂无目标")
+    } else {
+        for i in goals.len() {
+            let g = goals[i]
+            lines.push("- " + g.title + "（" + goal_progress(i) + "）")
+        }
+    }
+    lines.push("")
+
+    // 下周重点：未完成的待办 + 未来 7 天事件
+    lines.push("## 下周重点")
+    let next = []
+    for i in events.len() {
+        let e = events[i]
+        let d = date_of(e.dtstart)
+        if d > sun && d <= add_days(sun, 7) { next.push(e) }
+    }
+    if next.len() == 0 {
+        lines.push("- 暂无")
+    } else {
+        for i in next.len() {
+            let e = next[i]
+            lines.push("- " + pretty_date(date_of(e.dtstart)) + " " + e.summary)
+        }
+    }
+
+    report_text = join_lines(lines)
+}
+
+
+fn join_lines(lines) {
+    let s = ""
+    for i in lines.len() {
+        if i > 0 { s = s + "\n" }
+        s = s + lines[i]
+    }
+    return s
 }
 
 
@@ -3990,8 +4718,22 @@ fn sync_panels() {
     if wx_city_open { new_open = false }
     if wx_city_open { import_open = false }
     if wx_city_open { about_open = false }
+    // ★ v0.5.5：AI 排程 / 事件详情 / 周报三个新面板参与互斥。
+    //   优先级：详情 = 周报 > AI 排程 > 原有面板。任意一个打开时，其他面板让位。
+    if detail_open || report_open || ai_sched_open {
+        about_open = false
+        import_open = false
+        new_open = false
+        wx_city_open = false
+    }
+    if ai_sched_open || detail_open || report_open {
+        new_open = false
+        import_open = false
+        wx_city_open = false
+        about_open = false
+    }
     // 「有面板开着」= 页面处于模态态。下面所有让位规则都只依赖这一个布尔量。
-    let panel_on = about_open || import_open || new_open || wx_city_open
+    let panel_on = about_open || import_open || new_open || wx_city_open || ai_sched_open || detail_open || report_open
     ui.about_panel.set_visible(about_open)
     // ★ v0.5.0：城市面板同样只在「日程」分区出现，且与月历互斥 ——
     //   选城市时正在看的是月历天气，不需要让位给别的。
@@ -4040,6 +4782,10 @@ fn sync_panels() {
     ui.grid.set_visible(cal_view == 0)
     ui.cv_week.set_visible(cal_view == 1)
     ui.cv_day.set_visible(cal_view == 2)
+    // ★ v0.5.5：新面板显隐。它们都属于「日程」分区，切走即隐藏。
+    ui.ai_sched_panel.set_visible(ai_sched_open && tab == 0)
+    ui.detail_panel.set_visible(detail_open && tab == 0)
+    ui.report_panel.set_visible(report_open && tab == 0)
     // ★ 2026-10-11（v0.5.2 W3-1）：导入面板的提示行报「本次未识别哪些属性」。
     //   放在 sync_panels 而不是 start_import 里，是为了让**重新打开面板**时
     //   文案回到默认态 —— 否则上一次解析留下的「本次有 3 类…」会挂在面板上，
@@ -4426,6 +5172,28 @@ let new_seq = 0
 let sel_idx = -1
 let H_TAP = 32.0
 let H_NAV = 24.0           // .nav button height:24px
+
+// ── v0.5.5 · AI 排程面板 ──
+let ai_sched_open = false          // AI 排程面板是否展开
+let ai_sched_text = ""             // 用户输入的自然语言
+let ai_sched_state = 0             // 0 空闲 / 1 解析中 / 2 等待确认 / 3 失败
+let ai_sched_draft = nil           // 解析出的草稿事件 {summary, d8, start, end, dur, repeat, remind_min, priority, participants, location}
+let ai_sched_alts = []             // 替代时段 [{d8, start, end}]
+let ai_sched_err = ""              // 失败原因
+let ai_sched_token = 0             // 请求 token，防超时覆盖
+
+// ── v0.5.5 · 事件详情抽屉 ──
+let detail_open = false            // 详情抽屉是否展开
+let detail_uid = ""                // 当前查看的事件 uid
+let detail_tab = 0                 // 0 笔记 / 1 纪要 / 2 跟进 / 3 链接
+
+// ── v0.5.5 · 周报生成 ──
+let report_open = false            // 周报面板是否展开
+let report_text = ""               // 生成的周报文本
+
+// ── v0.5.5 · 存储文件 ──
+let NOTES_FILE = "event-notes.json"   // {uid: {agenda, minutes, followups, links, comments}}
+let notes = {}                     // 内存中的笔记数据
 
 
 fn toggle_more() {
@@ -8011,6 +8779,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
                         color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+                // ★ v0.5.5：事件详情入口
+                ButtonFlat{text: "事件详情" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || open_detail_for_focus()
+                    draw_bg +: {border_radius: 7.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
             }
         }
@@ -8060,7 +8834,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         ButtonFlat{text: "+ 新建" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_new()
             draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
                 color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
-            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #ffffff color_focus: #xffffff}}
+        // ★ v0.5.5：AI 排程入口
+        ButtonFlat{text: "AI 排程" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_ai_schedule()
+            draw_bg +: {border_radius: 8.0 color: c_accent color_hover: #x9a4220 color_down: #x7c351a
+                color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+            draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #ffffff}}
         // .btn-primary{background:ink;color:#fff;border-color:ink}  .btn .ic{mono 11px;opacity .75}
         ButtonFlat{text: "↑ 导入" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
             draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8198,6 +8977,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p0c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t0 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                // ★ v0.5.5：待办一键转日程
+                td_s0 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r0 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(0)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8232,6 +9018,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p1c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t1 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_s1 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r1 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(1)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8266,6 +9058,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p2c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t2 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_s2 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r2 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(2)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8300,6 +9098,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p3c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t3 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_s3 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r3 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(3)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8334,6 +9138,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p4c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t4 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_s4 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r4 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(4)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8368,6 +9178,12 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 td_p5c := CircleView{width: 8.0 height: 8.0 draw_bg +: {color: c_memo border_radius: 0.0}}
                 td_t5 := Label{width: Fill text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_regular{font_size: 12}}
+                td_s5 := ButtonFlat{text: "排期" height: 26.0 padding: Inset{left: 8 right: 8}
+                    on_click: || todo_schedule(5)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 td_r5 := ButtonFlat{text: "改期" height: 26.0 padding: Inset{left: 8 right: 8}
                     on_click: || todo_rearrange(5)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8471,6 +9287,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 Label{text: "目标与子任务" draw_text.color: c_ink
                     draw_text.text_style: theme.font_bold{font_size: 15}}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
+                // ★ v0.5.5：手动周报入口
+                ButtonFlat{text: "生成本周周报" height: 26.0 padding: Inset{left: 10 right: 10}
+                    on_click: || toggle_report()
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_accent_s color_down: c_accent_s
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent
+                        text_style: theme.font_regular{font_size: 11}}}
                 goal_count := Label{text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_regular{font_size: 11}}
             }
@@ -8497,7 +9320,16 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         draw_text.text_style: theme.font_bold{font_size: 13}}
                     gc_p0 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
+                    gc_d0 := Label{text: "" draw_text.color: c_ink3
+                        draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    // ★ v0.5.5：为这个目标设期限
+                    ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
+                        on_click: || goal_set_due(0, 14)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                            text_style: theme.font_regular{font_size: 10}}}
                     ButtonFlat{text: "加一步" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_step_add(0)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8552,7 +9384,15 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         draw_text.text_style: theme.font_bold{font_size: 13}}
                     gc_p1 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
+                    gc_d1 := Label{text: "" draw_text.color: c_ink3
+                        draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
+                        on_click: || goal_set_due(1, 14)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                            text_style: theme.font_regular{font_size: 10}}}
                     ButtonFlat{text: "加一步" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_step_add(1)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -8607,7 +9447,15 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         draw_text.text_style: theme.font_bold{font_size: 13}}
                     gc_p2 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
+                    gc_d2 := Label{text: "" draw_text.color: c_ink3
+                        draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
+                        on_click: || goal_set_due(2, 14)
+                        draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                            color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                        draw_text +: {color: c_ink3 color_hover: c_accent color_down: c_accent color_focus: c_ink3
+                            text_style: theme.font_regular{font_size: 10}}}
                     ButtonFlat{text: "加一步" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_step_add(2)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -9072,6 +9920,138 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             }
         }
     }
+
+    // ══ AI 排程面板（v0.5.5）══════════════════════════════
+    ai_sched_panel := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+            draw_bg +: {color: c_paper}
+            ai_sched_title := Label{text: "AI 排程" draw_text.color: c_ink
+                draw_text.text_style: theme.font_bold{font_size: 13}}
+            ai_sched_hint := Label{width: Fill text: "用一句话说出日程，例如「明天下午两点开会」" draw_text.color: c_ink3
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+            ai_in := TextInput{width: Fill height: 42 empty_text: "下周三下午三点和张总开会，提前半小时提醒"
+                draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                    border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                ButtonFlat{text: "解析" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || parse_nl_schedule()
+                    draw_bg +: {border_radius: 8.0 color: c_accent color_hover: #x9a4220 color_down: #x7c351a
+                        color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+                Label{width: Fill text: "" draw_text.color: c_ink3}
+                ButtonFlat{text: "取消" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || cancel_ai_schedule()
+                    draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ai_sched_ok := ButtonFlat{text: "确认写入" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || apply_ai_schedule()
+                    draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                        color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+            }
+            ai_sched_result := Label{width: Fill text: "" draw_text.color: c_ink
+                draw_text.text_style: theme.font_regular{font_size: 12}}
+            ai_sched_alt := Label{width: Fill text: "" draw_text.color: c_accent
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+        }
+    }
+
+    // ══ 事件详情抽屉（v0.5.5）══════════════════════════════
+    detail_panel := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+            draw_bg +: {color: c_paper}
+            RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                detail_title := Label{text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                detail_meta := Label{width: Fill text: "" draw_text.color: c_ink3
+                    draw_text.text_style: theme.font_regular{font_size: 11}}
+                ButtonFlat{text: "关闭" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || close_detail()
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+            }
+            // 标签切换
+            RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_paper}
+                ButtonFlat{text: "笔记" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ButtonFlat{text: "纪要" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ButtonFlat{text: "跟进" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+            }
+            // 笔记页
+            detail_note_in := TextInput{width: Fill height: 80 empty_text: "议程、想法、背景…"
+                draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                    border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            // 纪要页（与笔记同位，靠显隐切换）
+            detail_minutes_in := TextInput{width: Fill height: 80 empty_text: "会议纪要…"
+                draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                    border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            // 跟进页
+            detail_follow_page := RoundedView{width: Fill height: Fit flow: Down spacing: 6 draw_bg +: {color: c_paper}
+                RoundedView{width: Fill height: 38.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                    detail_follow_in := TextInput{width: Fill height: 34 empty_text: "新增一条跟进项"
+                        draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                            border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                        draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+                    ButtonFlat{text: "添加" height: 30.0 padding: Inset{left: 12 right: 12} on_click: || detail_add_follow()
+                        draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                            color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                        draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+                }
+                detail_follow_list := Label{width: Fill text: "" draw_text.color: c_ink2
+                    draw_text.text_style: theme.font_regular{font_size: 11}}
+            }
+            // 链接页
+            detail_link_page := RoundedView{width: Fill height: Fit flow: Down spacing: 6 draw_bg +: {color: c_paper}
+                RoundedView{width: Fill height: 38.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                    detail_link_in := TextInput{width: Fill height: 34 empty_text: "附件或参考链接"
+                        draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                            border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                        draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+                    ButtonFlat{text: "添加" height: 30.0 padding: Inset{left: 12 right: 12} on_click: || detail_add_link()
+                        draw_bg +: {border_radius: 7.0 color: c_ink color_hover: #x000000 color_down: #x333333
+                            color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
+                        draw_text +: {color: #xffffff color_hover: #xffffff color_down: #ffffff color_focus: #ffffff}}
+                }
+                detail_link_list := Label{width: Fill text: "" draw_text.color: c_ink2
+                    draw_text.text_style: theme.font_regular{font_size: 11}}
+            }
+        }
+    }
+
+    // ══ 周报面板（v0.5.5）══════════════════════════════
+    report_panel := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+            draw_bg +: {color: c_paper}
+            RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                Label{text: "本周周报" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                Label{width: Fill text: "" draw_text.color: c_ink3}
+                ButtonFlat{text: "关闭" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || close_report()
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+            }
+            report_text := Label{width: Fill text: "" draw_text.color: c_ink
+                draw_text.text_style: theme.font_regular{font_size: 11}}
+        }
+    }
+
     // ══ 写入确认条（有预览时出现）═══
     // ⚠️ 按钮必须**静态声明**：放进 on_render 建出的按钮，on_click 在重建后不会重绑，
     //    点了没反应（实测）。所以这里静态建好，用 set_visible 控制显隐。
