@@ -441,6 +441,16 @@ let status_fg   = #x8a3f16
 let conflicts = []     // [{a,b,minutes}] 两两重叠
 let advice = []        // [{mover_summary, keeper_summary, why, ok, ...}]
 let show_advice = false
+// v0.5.3：App Card 模拟视图开关
+let card_open = false
+// v0.5.3：邮件集成状态
+let mail_open = false
+let mail_candidates = []
+let mail_status = ""
+// v0.5.3：自动监控开关（持久化到 aux.json）
+let auto_monitor = false
+let last_conflict_count = 0
+let AUX_FILE = "aux.json"
 
 // 状态条文字（替代原 ui.status.set_text —— 静态 Label 不会自己更新）
 let status_text = "准备好了"
@@ -1381,11 +1391,12 @@ fn find_conflicts(list) {
 }
 
 
-// 在候选事件的当天，找一个 ≥ dur 分钟且不与任何事件冲突的空档。
+// 在候选事件的当天，找最多 max_n 个 ≥ dur 分钟且不与任何事件冲突的空档。
 // 搜索窗口：09:00 起，按 15 分钟步进，到 21:00 止。
-fn propose_slot(candidate, list, dur) {
+fn propose_slots(candidate, list, dur, max_n) {
+    let out = []
     let day = date_num(candidate.dtstart)
-    if day < 0 { return nil }
+    if day < 0 { return out }
     let day_start = 9 * 60
     let day_end = 21 * 60
     if dur > day_end - day_start { dur = day_end - day_start }
@@ -1404,9 +1415,18 @@ fn propose_slot(candidate, list, dur) {
             clash = true
             break
         }
-        if !clash { return { start: t, end: t + dur } }
+        if !clash {
+            out.push({ start: t, end: t + dur })
+            if out.len() >= max_n { return out }
+        }
         t = t + 15
     }
+    return out
+}
+
+fn propose_slot(candidate, list, dur) {
+    let slots = propose_slots(candidate, list, dur, 1)
+    if slots.len() > 0 { return slots[0] }
     return nil
 }
 
@@ -1451,7 +1471,9 @@ fn build_advice(conflicts, list) {
         if move_a { mover = a; keeper = b }
 
         let dur = abs_end(mover) - abs_start(mover)
-        let slot = propose_slot(mover, list, dur)
+        let slots = propose_slots(mover, list, dur, 3)
+        let slot = nil
+        if slots.len() > 0 { slot = slots[0] }
 
         // ★ 2026-10-11（v0.5.2 W2-2）：一侧全天时**必须换一套文案**。
         //   `propose_slot` 只在当天 09:00–21:00（720 分钟）里找空档，
@@ -1490,6 +1512,7 @@ fn build_advice(conflicts, list) {
             has_slot: has_slot,
             slot_start: s0,
             slot_end: s1,
+            slots: slots,
             why: why
         })
     }
@@ -1620,12 +1643,13 @@ fn apply_model_plan() {
         return
     }
     save()
-    scan_conflicts()
+    // v0.5.3：自动监控 + 改期后重扫
+    maybe_rescan()
     // 闸 7 复核：应用后冲突必须减少。没减少说明方案其实没解决问题 ——
     // 这时回滚，绝不留下一个「改了但没用」的状态。
     if conflicts.len() >= before {
         undo_last()
-        scan_conflicts()
+        maybe_rescan()
         set_status_warn("模型方案没有减少冲突，已自动回滚 · 仍可改用规则建议")
         ai_state = 3
         ai_plan = nil
@@ -1985,6 +2009,253 @@ fn sync_conflict() {
             ui.ai_alt_line.set_text("")
         }
     }
+    // v0.5.3：卡片视图随冲突详情同步
+    sync_card()
+}
+
+
+// v0.5.3：切换 App Card 模拟视图
+fn toggle_card() {
+    card_open = !card_open
+    sync_card()
+}
+
+
+// v0.5.3：同步卡片视图的内容与显隐
+fn sync_card() {
+    let show = card_open && conflicts.len() > 0 && advice.len() > 0
+    ui.card_view.set_visible(show)
+    if !show { return }
+    let a = advice[0]
+    // 找冲突双方的事件对象
+    let ev_a = nil
+    let ev_b = nil
+    if conflicts.len() > 0 {
+        let c = conflicts[0]
+        ev_a = events[c.a]
+        ev_b = events[c.b]
+    }
+    ui.card_title.set_text("改期冲突卡片")
+    if ev_a != nil {
+        ui.card_left_title.set_text(ev_a.summary)
+        ui.card_left_meta.set_text(time_range(ev_a) + " " + pretty_date(date_of(ev_a.dtstart)))
+        if ev_a.location != "" {
+            ui.card_left_loc.set_text("地点 " + ev_a.location)
+        } else {
+            ui.card_left_loc.set_text("")
+        }
+    }
+    if ev_b != nil {
+        ui.card_right_title.set_text(ev_b.summary)
+        ui.card_right_meta.set_text(time_range(ev_b) + " " + pretty_date(date_of(ev_b.dtstart)))
+        if ev_b.location != "" {
+            ui.card_right_loc.set_text("地点 " + ev_b.location)
+        } else {
+            ui.card_right_loc.set_text("")
+        }
+    }
+    // 替代时段按钮：最多 3 个
+    let slot_texts = ["", "", ""]
+    for i in 3 {
+        if i < a.slots.len() {
+            let s = a.slots[i]
+            slot_texts[i] = pretty_time(s.start) + "-" + pretty_time(s.end)
+        }
+    }
+    ui.card_slot0.set_text(slot_texts[0])
+    ui.card_slot1.set_text(slot_texts[1])
+    ui.card_slot2.set_text(slot_texts[2])
+    ui.card_slot0.set_visible(a.slots.len() > 0)
+    ui.card_slot1.set_visible(a.slots.len() > 1)
+    ui.card_slot2.set_visible(a.slots.len() > 2)
+}
+
+
+// v0.5.3：应用指定槽位的改期建议
+fn apply_advice_at(idx) {
+    if advice.len() == 0 { return }
+    let a = advice[0]
+    if idx < 0 || idx >= a.slots.len() { return }
+    let s = a.slots[idx]
+    let n = reschedule(a.mover, a.day, s.start, s.end)
+    if n == 0 {
+        set_status_warn("该时段无法应用（事件已不存在或为全天/重复事件）")
+        refresh_all()
+        return
+    }
+    save()
+    scan_conflicts()
+    set_status_ok("已改期到 " + pretty_time(s.start) + "-" + pretty_time(s.end) + " · 剩余 " + ("" + conflicts.len()) + " 处冲突")
+    refresh_all()
+}
+
+
+// v0.5.3：从邮件读取会议邀请
+fn read_mail_invites() {
+    mail_open = !mail_open
+    mail_candidates = []
+    mail_status = ""
+    if mail_open {
+        mail_status = "正在读取邮件…"
+        host.request("mail.list", {limit: 20}, fn(r) { mail_list_callback(r) })
+    }
+    sync_mail()
+}
+
+
+// v0.5.3：mail.list 回调
+fn mail_list_callback(r) {
+    if !r.is_ok {
+        mail_candidates = []
+        let err = "" + r.error
+        // card-host 不注册 mail 服务时会返回这类错误
+        if err.search("no service answers") >= 0 || err.search("not granted") >= 0 || err.search("refused") >= 0 {
+            mail_status = "邮件服务仅在完整 OctoSense shell 中可用，card-host 无法演示"
+        } else {
+            mail_status = "邮件服务不可用（" + err + "）"
+        }
+        sync_mail()
+        return
+    }
+    let msgs = []
+    if r.data != nil { msgs = r.data.messages }
+    let out = []
+    for i in msgs.len() {
+        let m = msgs[i]
+        if m == nil { continue }
+        let sub = "" + m.subject
+        if regex("(会议|邀请|INVITATION|RESCHEDULED|MEETING)", "i").test(sub) {
+            out.push(m)
+        }
+    }
+    mail_candidates = out
+    if out.len() == 0 {
+        mail_status = "未找到会议/邀请类邮件"
+    } else {
+        mail_status = "找到 " + ("" + out.len()) + " 封候选邮件，点击加入预览"
+    }
+    sync_mail()
+}
+
+
+// v0.5.3：把邮件主题、发件人、时间解析成一条临时事件（能解析多少算多少）
+fn parse_mail_event(subject, sender, date, time) {
+    let ev = new_event()
+    ev.summary = subject
+    ev.organizer = sender
+    ev.status = "CONFIRMED"
+    // 默认使用「关注日」当天 09:00-10:00
+    let d8 = focus_d8
+    let start_min = 9 * 60
+    let end_min = 10 * 60
+    // 尝试从主题或时间串里找 HH:MM
+    let tm = regex("(\\d{1,2}):\\s*(\\d{2})", "i").exec(time)
+    if tm == nil { tm = regex("(\\d{1,2}):\\s*(\\d{2})", "i").exec(subject) }
+    if tm != nil && tm.len() >= 3 {
+        let h = tm[1].to_f64()
+        let mi = tm[2].to_f64()
+        if h >= 0 && h <= 23 && mi >= 0 && mi <= 59 {
+            start_min = h * 60 + mi
+            end_min = start_min + 60
+        }
+    }
+    // 尝试找日期 YYYY-MM-DD / YYYY/MM/DD / M月D日
+    let dm = regex("(\\d{4})[-\\/](\\d{1,2})[-\\/](\\d{1,2})", "i").exec(date)
+    if dm == nil { dm = regex("(\\d{4})[-\\/](\\d{1,2})[-\\/](\\d{1,2})", "i").exec(subject) }
+    if dm != nil && dm.len() >= 4 {
+        let y = dm[1].to_f64()
+        let mo = dm[2].to_f64()
+        let d = dm[3].to_f64()
+        if y >= 2000 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 {
+            d8 = pad8(y, mo, d)
+        }
+    } else {
+        let dm2 = regex("(\\d{1,2})月(\\d{1,2})日", "i").exec(subject)
+        if dm2 != nil && dm2.len() >= 3 {
+            let mo = dm2[1].to_f64()
+            let d = dm2[2].to_f64()
+            if mo >= 1 && mo <= 12 && d >= 1 && d <= 31 {
+                d8 = pad8(view_year(), mo, d)
+            }
+        }
+    }
+    ev.dtstart = d8 + "T" + clock_compact(start_min) + "00"
+    ev.dtend = d8 + "T" + clock_compact(end_min) + "00"
+    ev.start_minutes = start_min
+    ev.end_minutes = end_min
+    return ev
+}
+
+
+// v0.5.3：把解析出的邮件事件加入预览（不直接写入事件库）
+fn add_mail_preview(idx) {
+    if idx < 0 || idx >= mail_candidates.len() { return }
+    let m = mail_candidates[idx]
+    let sub = "" + m.subject
+    let sender = "" + m.from
+    let date = "" + m.date
+    let time = "" + m.time
+    let ev = parse_mail_event(sub, sender, date, time)
+    new_seq = new_seq + 1
+    ev.uid = "mail-" + date_of(ev.dtstart) + "-" + ("" + new_seq)
+    merged.push(ev)
+    mail_status = "已把「" + sub + "」加入预览，点「写入」后落库"
+    sync_confirm()
+    sync_mail()
+    refresh_all()
+}
+
+
+// v0.5.3：同步邮件候选面板
+fn sync_mail() {
+    ui.mail_panel.set_visible(mail_open && import_open && tab == 0)
+    if !mail_open { return }
+    ui.mail_status.set_text(mail_status)
+    if mail_candidates.len() > 0 { ui.mail_row0.set_text("" + mail_candidates[0].subject) }
+    if mail_candidates.len() > 1 { ui.mail_row1.set_text("" + mail_candidates[1].subject) }
+    if mail_candidates.len() > 2 { ui.mail_row2.set_text("" + mail_candidates[2].subject) }
+    if mail_candidates.len() > 3 { ui.mail_row3.set_text("" + mail_candidates[3].subject) }
+    if mail_candidates.len() > 4 { ui.mail_row4.set_text("" + mail_candidates[4].subject) }
+    ui.mail_row0.set_visible(mail_candidates.len() > 0)
+    ui.mail_row1.set_visible(mail_candidates.len() > 1)
+    ui.mail_row2.set_visible(mail_candidates.len() > 2)
+    ui.mail_row3.set_visible(mail_candidates.len() > 3)
+    ui.mail_row4.set_visible(mail_candidates.len() > 4)
+}
+
+
+// v0.5.3：自动监控开关
+fn toggle_auto_monitor() {
+    set_auto_monitor(!auto_monitor)
+}
+
+fn set_auto_monitor(v) {
+    auto_monitor = v
+    let flag = "false"
+    if auto_monitor { flag = "true" }
+    fs.write(AUX_FILE, "{\"auto_monitor\":" + flag + "}")
+    refresh_all()
+}
+
+fn load_auto_monitor() {
+    if fs.exists(AUX_FILE) {
+        let raw = fs.read(AUX_FILE)
+        let v = raw.parse_json()
+        if v != nil && v.auto_monitor != nil {
+            auto_monitor = v.auto_monitor
+        }
+    }
+}
+
+
+// v0.5.3：事件变更后，若开启自动监控则重扫冲突；发现新冲突时提示
+fn maybe_rescan() {
+    let before = conflicts.len()
+    scan_conflicts()
+    if auto_monitor && conflicts.len() > before {
+        set_status_warn("自动监控发现 " + ("" + (conflicts.len() - before)) + " 处新冲突")
+    }
+    refresh_all()
 }
 
 
@@ -2067,6 +2338,10 @@ fn refresh_all() {
     // 点一下立刻变字、不必等整页刷新；这里再同步一次，让按钮文案就是
     // new_repeat 的纯函数 —— 少一条「某条路径忘了更新按钮」的可能）。
     ui.nr_btn.set_text(repeat_label(new_repeat))
+    // v0.5.3：自动监控按钮文案同步
+    let am_label = "自动监控：关"
+    if auto_monitor { am_label = "自动监控：开" }
+    ui.auto_monitor_btn.set_text(am_label)
     // ══ 2026-10-01 新增：分区导航 / 视图 / 各分区内容 ══════════════
     // 全部是「静态控件的文案与可见性」同步 —— 这些值只在建树时求值一次，
     // 不在这里推就永远是初值（本项目最贵的一类坑，见 month_title 的注释）。
@@ -2352,10 +2627,18 @@ fn load() {
     //   必须在 wx_live_load_cache / wx_live_fetch **之前** —— 那两个按当前坐标取数，
     //   坐标还没读回来就会先用北京的缓存上屏。
     wx_city_load()
+    load_auto_monitor()
     sync_panels()
     ui.confirm_bar.set_visible(false)
     ui.conflict_bar.set_visible(false)
     ui.conflict_detail.set_visible(false)
+    // v0.5.3：初始收起卡片视图与邮件面板
+    card_open = false
+    mail_open = false
+    sync_card()
+    sync_mail()
+    // v0.5.3：启动完成后自动扫描一次冲突
+    scan_conflicts()
     refresh_all()
     set_status("已加载 " + ("" + n) + " 个事件")
 }
@@ -2392,6 +2675,7 @@ fn scan_conflicts() {
             + ("" + conflicts.len()) + " 处时间冲突")
     }
     sync_conflict()
+    last_conflict_count = conflicts.len()
 }
 
 
@@ -2416,14 +2700,15 @@ fn confirm_import() {
     merged = []
     // 写入完成 → 收起导入面板，让主列表立刻显示刚写进去的事件
     import_open = false
+    mail_open = false
     // ★ 走唯一出口。这里原来手写了 3 行 set_visible（import_panel / cal_box / metrics），
     //   而 fest_bar 是**新加的常驻条、旧代码里从不隐藏**，所以当时没暴露问题；
     //   但现在 toggle_import() 改成按规则让位（导入时连 fest_bar 一起收起来给确认条腾地方），
     //   手写这 3 行就会把 fest_bar 永久留在隐藏态 —— 说明行在第一次导入之后再也不出现。
     //   接线到 sync_panels() 从根上消掉这类「五处手动同步」的漂移。
     sync_panels()
-    scan_conflicts()
-    refresh_all()
+    // v0.5.3：自动监控 + 写入后重扫
+    maybe_rescan()
 }
 
 
@@ -2626,7 +2911,12 @@ fn apply_advice() {
         applied = applied + reschedule(ad.mover, ad.day, ad.slot_start, ad.slot_end)
     }
     save()
+    // v0.5.3：改期后重扫，并记录自动监控的新冲突增量
+    let before = conflicts.len()
     scan_conflicts()
+    if auto_monitor && conflicts.len() > before {
+        set_status_warn("自动监控发现 " + ("" + (conflicts.len() - before)) + " 处新冲突")
+    }
     if applied > 0 {
         set_status_ok("已应用 " + ("" + applied) + " 条改期建议 · 剩余 " + ("" + conflicts.len()) + " 处冲突")
     } else if conflicts.len() > 0 {
@@ -2641,6 +2931,7 @@ fn cancel_import() {
     merged = []
     // 放弃这次预览 → 一并收起导入面板，回到主列表视图
     import_open = false
+    mail_open = false
     // ★ 同 confirm_import：走 sync_panels()（理由见那里的注释）
     sync_panels()
     set_status("已取消，事件库未改动")
@@ -2680,13 +2971,16 @@ fn undo_last() {
     let target = snaps.len() - 2
     if target < 0 {
         events = []
-        set_status_ok("已清空事件库")
         save()
+        maybe_rescan()
+        set_status_ok("已清空事件库")
         refresh_all()
         return
     }
     events = snaps[target].data
     save()
+    maybe_rescan()
+    // v0.5.3：在重扫后保留「已回滚」状态，避免被 scan_conflicts 覆盖
     set_status_ok("已回滚到 " + ("" + events.len()) + " 个事件")
     refresh_all()
 }
@@ -2887,6 +3181,8 @@ fn clear_all() {
     last_extra_kinds = ""
     ui.entry.set_text("")
     save()
+    maybe_rescan()
+    // v0.5.3：在重扫后保留「已清空」状态，避免被 scan_conflicts 覆盖
     set_status_ok("事件库已清空，输入框也一并清掉了")
     refresh_all()
 }
@@ -3604,8 +3900,8 @@ fn save_new() {
     new_open = false
     sel_idx = -1          // 存完就收掉选中态（新事件自己会在格子上点出圆点）
     sync_panels()
-    scan_conflicts()
-    refresh_all()
+    // v0.5.3：自动监控 + 新建后重扫
+    maybe_rescan()
     let extra = ""
     if new_repeat != 0 { extra = " · " + repeat_label(new_repeat) + "重复" }
     set_status_ok("已新建「" + title + "」· " + pretty_date(d8) + extra)
@@ -3719,6 +4015,8 @@ fn sync_panels() {
     //   ⚠️ 清空输入框时（clear_all / cancel_import）也要刷，
     //   理由同上：残留的文案比没有文案更误导。
     ui.import_hint.set_text(extra_hint(last_extra_kinds))
+    // v0.5.3：邮件候选面板显隐同步
+    sync_mail()
 }
 
 
@@ -4184,6 +4482,8 @@ fn toggle_import() {
     //   再多一个面板就落到视口外了。互斥必须三个方向都写。
     if import_open { new_open = false }
     if import_open { ui.entry.set_text("") }
+    // v0.5.3：关闭导入面板时一并收起邮件候选
+    if !import_open { mail_open = false }
     // 导入面板同样当模态用：月历 + 指标 + 节日说明行让位（与 about 同一套路）。
     // ⚠️⚠️ 血泪（2026-09-30）：**节日说明行 fest_bar（44px）** 加上 metrics(39px)
     //    会把「预览 · N 个事件尚未写入 | 取消 | 写入」这条确认条挤到 y≈930 ——
@@ -8578,6 +8878,10 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
             RoundedView{width: Fill height: 32.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
                 Label{width: Fill text: "" draw_text.color: c_ink3}
+                ButtonFlat{text: "邮件" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || read_mail_invites()
+                    draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
                 ButtonFlat{text: "取消" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || toggle_import()
                     draw_bg +: {border_radius: 8.0 color: c_card color_hover: c_paper color_down: c_paper
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
@@ -8585,7 +8889,48 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 ButtonFlat{text: "解析" height: H_TAP padding: Inset{left: 14 right: 14} on_click: || start_import()
                     draw_bg +: {border_radius: 8.0 color: c_ink color_hover: #x000000 color_down: #x333333
                         color_focus: c_ink border_size: 1.0 border_color: c_ink border_color_focus: c_ink}
-                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+                    draw_text +: {color: #ffffff color_hover: #ffffff color_down: #ffffff color_focus: #xffffff}}
+            }
+        }
+    }
+
+    // v0.5.3：邮件候选面板（点击导入面板的「邮件」后展开）
+    mail_panel := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
+            draw_bg +: {color: c_paper}
+            mail_status := Label{width: Fill text: "" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            RoundedView{width: Fill height: Fit flow: Down spacing: 4 draw_bg +: {color: c_paper}
+                mail_row0 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
+                    on_click: || add_mail_preview(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+                mail_row1 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
+                    on_click: || add_mail_preview(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+                mail_row2 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
+                    on_click: || add_mail_preview(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+                mail_row3 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
+                    on_click: || add_mail_preview(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+                mail_row4 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
+                    on_click: || add_mail_preview(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
             }
         }
     }
@@ -8736,6 +9081,16 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         draw_bg +: {color: c_paper}
         RoundedView{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 12 spacing: 6
             draw_bg +: {color: c_warn_s border_radius: 8.0 border_size: 1.0 border_color: #xf0dfc0}
+            // v0.5.3：卡片视图切换入口
+            RoundedView{width: Fill height: 28.0 flow: Right spacing: 8 draw_bg +: {color: c_warn_s}
+                ButtonFlat{text: "卡片视图" height: 26.0 padding: Inset{left: 12 right: 12}
+                    on_click: || toggle_card()
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3}}
+                Label{width: Fill text: "" draw_text.color: c_ink3}
+            }
             advice_line := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
             advice_line2 := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 13}}
             advice_why := Label{width: Fill text: "" draw_text.color: c_ok draw_text.text_style: theme.font_regular{font_size: 11}}
@@ -8769,6 +9124,50 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         }
     }
 
+    // v0.5.3：App Card 模拟视图（应用内模拟桌面卡片）
+    card_view := RoundedView{width: Fill height: Fit flow: Down
+        draw_bg +: {color: c_paper}
+        RoundedView{width: Fill height: Fit flow: Down margin: Inset{left: 20 right: 20 top: 4 bottom: 4} padding: 12 spacing: 8
+            draw_bg +: {color: c_card border_radius: 10.0 border_size: 1.0 border_color: c_line2}
+            card_title := Label{width: Fill text: "改期冲突卡片" align: Align{x: 0.5 y: 0.0}
+                draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 14}}
+            // 左右两栏
+            RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_card}
+                RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_warn_s border_radius: 8.0 padding: 8}
+                    Label{width: Fill text: "原会议" draw_text.color: c_warn draw_text.text_style: theme.font_bold{font_size: 11}}
+                    card_left_title := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 12}}
+                    card_left_meta := Label{width: Fill text: "" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 10}}
+                    card_left_loc := Label{width: Fill text: "" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
+                }
+                RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_ok_s border_radius: 8.0 padding: 8}
+                    Label{width: Fill text: "冲突预约" draw_text.color: c_ok draw_text.text_style: theme.font_bold{font_size: 11}}
+                    card_right_title := Label{width: Fill text: "" draw_text.color: c_ink draw_text.text_style: theme.font_regular{font_size: 12}}
+                    card_right_meta := Label{width: Fill text: "" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 10}}
+                    card_right_loc := Label{width: Fill text: "" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 10}}
+                }
+            }
+            // 替代时段按钮
+            RoundedView{width: Fill height: 28.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
+                Label{width: Fill text: "替代时段" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                card_slot0 := ButtonFlat{text: "" height: 26.0 padding: Inset{left: 10 right: 10}
+                    on_click: || apply_advice_at(0)
+                    draw_bg +: {border_radius: 6.0 color: c_accent color_hover: #xa3431a color_down: #xa3431a
+                        color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+                card_slot1 := ButtonFlat{text: "" height: 26.0 padding: Inset{left: 10 right: 10}
+                    on_click: || apply_advice_at(1)
+                    draw_bg +: {border_radius: 6.0 color: c_accent color_hover: #xa3431a color_down: #xa3431a
+                        color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #ffffff color_focus: #xffffff}}
+                card_slot2 := ButtonFlat{text: "" height: 26.0 padding: Inset{left: 10 right: 10}
+                    on_click: || apply_advice_at(2)
+                    draw_bg +: {border_radius: 6.0 color: c_accent color_hover: #xa3431a color_down: #xa3431a
+                        color_focus: c_accent border_size: 1.0 border_color: c_accent border_color_focus: c_accent}
+                    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff}}
+            }
+        }
+    }
+
     // ══ 关于面板 ═════════════════════════════════════
     // ⚠️ 静态容器 + set_visible（同 confirm_bar 套路）：on_render 里的按钮点击不重绑。
     about_panel := RoundedView{width: Fill height: Fit flow: Down
@@ -8791,7 +9190,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: Fit flow: Down spacing: 3 draw_bg +: {color: c_card}
                     Label{text: "OctoSense 日历" draw_text.color: c_ink draw_text.text_style: theme.font_bold{font_size: 15}}
                     Label{width: Fill text: "队伍 OMA · ody-cai / mark-liuzh" draw_text.color: c_ink2 draw_text.text_style: theme.font_regular{font_size: 12}}
-                    Label{width: Fill text: "版本 0.5.2 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                    Label{width: Fill text: "版本 0.5.3 · Apache-2.0" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
                 }
             }
             Hr{draw_bg +: {color: c_line border_size: 0.0 height: 1.0}}
@@ -8803,12 +9202,25 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             //   否则又是一处「文档说的和代码做的不是一回事」。
             //   ⚠️ 单行 Label 多 6 个字就换行 → 后面全被裁（本项目血泪）。
             //   这句已接近单行上限（实测 ≈15 字/行，容器内宽 338px），所以拆成两句。
-            Label{width: Fill text: "本应用申请 storage + net + model，日历数据全部留在本机。"
+            Label{width: Fill text: "本应用申请 storage + net + model + mail，日历数据全部留在本机。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "net 只连 Open-Meteo 两个域：取天气，以及把你输入的城市名换成坐标；不做自动定位。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             Label{width: Fill text: "model 只在你点「请模型给方案」时，把这一条冲突的标题与时长发给你自己配置的 AI 提供方；改期要你点「采纳」才写入，判定与校验都在本机。"
                 draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            Label{width: Fill text: "mail 只在完整 OctoSense shell 中可用：点击「邮件」读取会议邀请并加入预览，不会自动写入事件库。"
+                draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+            // v0.5.3：自动监控开关
+            RoundedView{width: Fill height: 30.0 flow: Right spacing: 8 draw_bg +: {color: c_card}
+                Label{width: Fill text: "事件变更后自动重扫冲突" draw_text.color: c_ink2
+                    draw_text.text_style: theme.font_regular{font_size: 11}}
+                auto_monitor_btn := ButtonFlat{text: "自动监控：关" height: 28.0 padding: Inset{left: 12 right: 12}
+                    on_click: || toggle_auto_monitor()
+                    draw_bg +: {border_radius: 7.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2
+                        color_disabled: c_ink3 text_style: theme.font_regular{font_size: 11}}}
+            }
             // ── 共享范围（2026-10-01 新增）──────────────────────────────
             // ⚠️ 必须把边界写在**界面上**，不能只写 README：真正的实时共享要有后端，
             //    本应用只申请 storage、没有网络出口，做不到。这里给的是「离线能做

@@ -580,7 +580,7 @@ def wait_btn(label, timeout=12.0, interval=0.4):
        点「解析」后预览条要跨若干帧才建出来。原来固定 sleep 0.6s 就抓快照，
        实测此刻「写入」按钮**还没进布局树** → `write` 报
        「FAIL: 找不到按钮『写入』」，而 1 秒后它明明就在 r=[329,798,51,28]。
-       这是**测试脚本的竞态**，不是应用的 bug —— 用固定 sleep 测分块任务
+       这是**测试脚本的竞态**，不是应用的 bug —— 用固定 sleep 测分分块任务
        早晚会翻车，改成轮询。
     """
     deadline = time.time() + timeout
@@ -592,6 +592,37 @@ def wait_btn(label, timeout=12.0, interval=0.4):
         if time.time() >= deadline:
             return None, s
         time.sleep(interval)
+        s = snap()
+
+
+def wait_btn_scroll(label, timeout=12.0, interval=0.4):
+    """轮询等待按钮出现；若当前视口找不到，会滚动页面上下寻找。
+
+    背景（2026-10-11 · v0.5.3）：冲突条及其按钮挂在 `conflict_bar` 里，
+    而 `/snap` 只返回视口内节点。展开冲突详情后页面变长，固定向下滚可能
+    把已经可见的 conflict_bar 推出视口。本函数先尝试当前视口，再向下、
+    再向上滚动，直到按钮出现或超时。
+    """
+    deadline = time.time() + timeout
+    s = snap()
+    last_dir = 0
+    while True:
+        n = btn(s, label)
+        if n:
+            return n, s
+        if time.time() >= deadline:
+            return None, s
+        # 先向下滚 3 次，再向上滚 6 次（覆盖从底到顶）
+        if last_dir < 3:
+            scroll(400)
+            last_dir = last_dir + 1
+        elif last_dir < 9:
+            scroll(-400)
+            last_dir = last_dir + 1
+        else:
+            # 一轮没找着，复位后再轮询等待（给异步渲染留时间）
+            last_dir = 0
+            time.sleep(interval)
         s = snap()
 
 
@@ -905,7 +936,7 @@ def main():
             print("FAIL: 找不到按钮「导出」")
 
     elif cmd == "more":
-        n, s = wait_btn("详情")
+        n, s = wait_btn_scroll("详情")
         if n:
             print("click 详情", click_node(n))
             time.sleep(0.5)
@@ -915,7 +946,7 @@ def main():
             print("  现有按钮:", buttons_of(s))
 
     elif cmd == "advice":
-        n, s = wait_btn("应用建议")
+        n, s = wait_btn_scroll("应用建议")
         if n:
             print("click 应用建议", click_node(n))
             time.sleep(0.6)
@@ -925,7 +956,7 @@ def main():
             print("  现有按钮:", buttons_of(s))
 
     elif cmd == "rollback":
-        n, s = wait_btn("回滚")
+        n, s = wait_btn_scroll("回滚")
         if n:
             print("click 回滚", click_node(n))
             time.sleep(0.6)

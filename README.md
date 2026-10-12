@@ -3,7 +3,7 @@
 > **在月历上点一天直接写日程（生日可设每年重复）；粘贴一段 ICS，看清冲突，改完无损导出。**
 
 运行在 OctoSense 隔离宿主里的脚本应用（Splash 语言，`bundle/main.splash` 一个文件）。
-没有账户、没有云同步。申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）+ `model`（一次性的模型调用，用于给冲突改期建议）——日程、待办、心情、目标、时间胶囊等**用户数据**不出这台设备。
+没有账户、没有云同步。申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）+ `model`（一次性的模型调用，用于给冲突改期建议）+ `mail`（仅在完整 OctoSense shell 中读取会议邀请预览，不自动写入事件库）——日程、待办、心情、目标、时间胶囊等**用户数据**不出这台设备。
 
 | 主界面 | 点格子写日程 | ICS 导入 | 冲突详情与建议 |
 | --- | --- | --- | --- |
@@ -166,7 +166,7 @@ _toolchain/OctoSense-App-Hub/target/release/hub check bundle \
 
 它们都遵守同一条铁律：**本地优先**。每个分区写自己的一个 json 文件，
 日程 / 待办 / 心情 / 目标 / 时间胶囊全在应用私有目录里，没有任何网络请求。
-`manifest.json` 申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）。
+`manifest.json` 申请 `storage`（本机存储）+ `net`（**仅 Open-Meteo 天气一项只读 GET**，不传任何用户数据）+ `mail`（仅在完整 OctoSense shell 中读取会议邀请预览，不自动写入事件库）。
 
 | 分区 | 做什么 | 落在哪 |
 | --- | --- | --- |
@@ -435,14 +435,15 @@ makepad/platform/src/script/res.rs:574             平台自己设了一个「�
 **先说本应用自己做了什么，再引用宿主的原话** —— 顺序反过来读起来像在回避：
 
 本应用申请 `storage`（本机存储）、`net`（**仅 Open-Meteo 天气一项只读 GET**，
-1 个 host）、`model`（一次性的模型调用，用于冲突消解建议）：
+2 个 host）、`model`（一次性的模型调用，用于冲突消解建议）、`mail`（仅在完整 OctoSense shell 中读取会议邀请并加入预览，不自动写入事件库）：
 
 ```json
 {
-  "capabilities": ["storage", "net", "model"],
+  "capabilities": ["storage", "net", "model", "mail"],
   "network": {
     "hosts": [
-      "api.open-meteo.com"
+      "api.open-meteo.com",
+      "geocoding-api.open-meteo.com"
     ]
   },
   "id": "com.oma.octosense.calendar",
@@ -457,6 +458,7 @@ makepad/platform/src/script/res.rs:574             平台自己设了一个「�
 | `storage` | 事件库、天气缓存、导入快照、选定的天气城市 | **不发出任何东西** | 全程只在本机 |
 | `net` | 月历格子的天气（`sys.weather` 逐日取数，冷启动一次后缓存本机）；把用户输入的城市名换成经纬度（`sys.geocodenum`） | 天气：经纬度与日期；换城市：**仅用户输入的城市名**。**都不带任何事件字段** | 天气冷启动一次；换城市只在用户点「应用」时；断网回落上次缓存 |
 | `model` | 冲突详情区的「请模型给方案」 | **仅这一条冲突的标题与时长**（地点/描述/参与人/附件一律不发） | 只有用户点了那个按钮才发 |
+| `mail` | 导入面板的「邮件」按钮：读取会议邀请类邮件并加入预览 | **只在完整 OctoSense shell 中可用**；读取主题/发件人/日期/时间，不读正文；**不会自动写入事件库** | 只有用户点了「邮件」按钮才发；`card-host` 无此服务，会友好降级 |
 
 三条硬承诺，都有对应代码路径与测试：
 
@@ -678,6 +680,17 @@ fill = color.mix(color_focus, focus)
 - 界面中的章鱼吉祥物来自 **Noto Animated Emoji** 的 `:octopus:`（U+1F419），
   按 **CC BY 4.0** 使用，署名与应用内「关于」页见 [THIRD-PARTY.md](THIRD-PARTY.md)。
 - 应用仅在「关于」页展示该素材以声明出处，**不做商业使用、不再分发素材库本身**。
+
+---
+
+## v0.5.3 更新日志（gap-fill 分支）
+
+本版补齐官方 7 段指南中第 04 / 05 / 07 段缺失的能力，同时保持 ICS 往返完整性与单一写入点不变。
+
+- **04 App Card 模拟视图**：冲突详情区新增「卡片视图」入口，应用内模拟一张桌面卡片，左右分栏展示「原会议」与「冲突预约」，并提供 1–3 个替代时段按钮；点击任一按钮即调用同一套 `reschedule()` 改期。
+- **05 Mail 上下文**：`manifest.json` 新增 `mail` 能力；导入面板新增「邮件」按钮，调用 `host.request("mail.list")` 读取会议/邀请类邮件主题，解析为预览事件加入 `merged`，**不会自动写入事件库**。在 `card-host` 等未注册 `mail` 服务的宿主上友好降级，提示「邮件服务仅在完整 OctoSense shell 中可用」。
+- **07 触发时机**：启动 `load()`、确认写入 `confirm_import()`、应用建议 `apply_advice()` 后自动重扫冲突；新增「事件变更后自动重扫冲突」开关，持久化到 `aux.json`，开启后每次事件变更（写入/新建/清空/回滚）都会自动重扫，发现新增冲突时状态条告警。
+- **工程约束**：保持 `reschedule()` 为唯一写入点；全天事件仍不参与自动改期；冲突详情仍量化重叠时长；回滚仍基于快照；静态 13 道门禁与 8 条端到端流程全部通过。
 
 ---
 
