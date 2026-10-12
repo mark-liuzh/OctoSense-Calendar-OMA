@@ -447,6 +447,7 @@ let card_open = false
 let mail_open = false
 let mail_candidates = []
 let mail_status = ""
+let mail_limit = 20
 // v0.5.3：自动监控开关（持久化到 aux.json）
 let auto_monitor = false
 let last_conflict_count = 0
@@ -2097,7 +2098,20 @@ fn read_mail_invites() {
     mail_status = ""
     if mail_open {
         mail_status = "正在读取邮件…"
-        host.request("mail.list", {limit: 20}, fn(r) { mail_list_callback(r) })
+        // 读取用户设置的数量，默认 20，范围 1..200
+        let lim = ui.mail_limit_input.text()
+        if lim == nil {
+            mail_limit = 20
+        } else {
+            let n = lim.trim().to_f64()
+            if n >= 1 && n <= 200 {
+                mail_limit = n
+            } else {
+                mail_limit = 20
+                mail_status = "数量超出范围，使用默认值 20"
+            }
+        }
+        host.request("mail.list", {limit: mail_limit}, fn(r) { mail_list_callback(r) })
     }
     sync_mail()
 }
@@ -8899,6 +8913,13 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         draw_bg +: {color: c_paper}
         RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
             draw_bg +: {color: c_paper}
+            RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
+                Label{width: Fit text: "读取最近" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
+                mail_limit_input := TextInput{width: 64 height: 28 empty_text: "20"
+                    draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
+                        border_radius: 6.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
+                    draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+                Label{width: Fit text: "封" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}}
             mail_status := Label{width: Fill text: "" draw_text.color: c_ink3 draw_text.text_style: theme.font_regular{font_size: 11}}
             RoundedView{width: Fill height: Fit flow: Down spacing: 4 draw_bg +: {color: c_paper}
                 mail_row0 := ButtonFlat{text: "" width: Fill height: 28.0 padding: Inset{left: 10 right: 10}
