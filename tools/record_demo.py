@@ -35,6 +35,7 @@ from pathlib import Path
 # ── 常量 ────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 BINARY = ROOT / "_toolchain" / "OctoSense-App-Hub" / "target" / "release" / "card-host"
+CURRENT_PORT = 8932  # boot_host 时更新；e2e 子进程按这个端口驱动
 BUNDLE_ORIG = ROOT / "bundle"
 BUNDLE_DEV = ROOT / ".runtime" / "bundle-recording"  # 剥签名的临时 bundle
 FRAME_DIR = ROOT / ".runtime" / "demo-frames"
@@ -123,7 +124,14 @@ def kill_host():
 
 
 def boot_host(port):
+    global CURRENT_PORT
+    CURRENT_PORT = port
     kill_host()
+    # ⚠️ 每次录制必须全新存储（2026-10-12 实测踩到）：复用上次的 app-data
+    #    会让宿主加载到旧事件，帧里凭空出现「已加载 N 个事件」，
+    #    与本轮剧情完全对不上。
+    if APP_DATA.exists():
+        shutil.rmtree(APP_DATA)
     APP_DATA.mkdir(parents=True, exist_ok=True)
     HOST_LOG.parent.mkdir(parents=True, exist_ok=True)
     if HOST_LOG.exists():
@@ -132,9 +140,15 @@ def boot_host(port):
     env["MAKEPAD_REMOTE"] = str(port)
     env["NO_PROXY"] = "127.0.0.1,localhost"
     env["no_proxy"] = env["NO_PROXY"]
+    # ⚠️ 必须显式 --size（2026-10-12 实测踩到）：不传时窗口协商成 412x849，
+    #    比设计视口少 43px，导入面板一开底部工具栏整个被顶出视口，
+    #    e2e("export") 找不到「导出」按钮 ⇒ exported.ics 是 0 字节 ⇒
+    #    往返段灌入空内容，整段硬证据作废。
+    #    与 tools/_env.sh 的 WINDOW_SIZE 保持一致（412x1000）。
     p = subprocess.Popen(
         [str(BINARY), "--bundle", str(BUNDLE_DEV),
          "--app-data", str(APP_DATA),
+         "--size", "412x1000",
          "--allow-unsigned", "--stamp"],
         cwd=str(ROOT),
         stdout=HOST_LOG.open("wb"),
@@ -154,14 +168,27 @@ def boot_host(port):
 
 # ── e2e 驱动 ────────────────────────────────────────────────────────────
 def e2e(cmd, *args, timeout=60):
+    # ⚠️ 必须显式传 OCTO_PORT（2026-10-12 实测踩到）：e2e.py 默认 8932，
+    #    录制用别的端口时所有驱动动作会打到空端口**静默失败**，
+    #    抓回来的帧全是空应用，且 e2e rc 仍是 0（urllib 异常被上层吃掉）。
+    env = os.environ.copy()
+    env["OCTO_PORT"] = str(CURRENT_PORT)
     r = subprocess.run(
         ["python3", "tools/e2e.py", cmd, *args],
         cwd=str(ROOT), capture_output=True, text=True, timeout=timeout,
+        env=env,
     )
     if r.returncode != 0:
         log(f"  WARN e2e {cmd} rc={r.returncode}")
         if r.stderr.strip():
             log(f"    stderr: {r.stderr.strip()[:200]}")
+    # ⚠️ e2e.py 内部失败（按钮找不到、预览条没出现）时进程退出码仍是 0，
+    #    只能靠 stdout 里的 FAIL 字样发现（2026-10-12 实测：端口传错时
+    #    所有动作静默失败，整段视频录成空应用）。录制必须响亮点名。
+    if "FAIL" in r.stdout:
+        for line in r.stdout.splitlines():
+            if "FAIL" in line:
+                log(f"  !! e2e {cmd}: {line.strip()[:160]}")
     return r
 
 
@@ -478,6 +505,15 @@ def compose_mp4(frames_with_durations, out_path: Path, fps=24):
 
 # ── 剧情 ──────────────────────────────────────────────────────────────
 # 每一段 = (frame_filename, [caption_lines], action, hold_seconds)
+
+
+def scroll_top():
+    """滚回页顶。录制剧情里 more/advice 会用 wait_btn_scroll 向下滚动找按钮，
+    视口留在页面中部 —— 此时开导入面板宿主会自动滚到面板、底部工具栏掉出视口，
+    后续 export 找不到「导出」（2026-10-12 实测）。开面板前先回顶。"""
+    for _ in range(6):
+        e2e("scroll", "-400")
+
 def storyboard():
     """3 分钟完整版（约 21 段 / ~190 秒）。每段 hold 时长按"评委能读完字幕+看一眼画面"调。
     增项：节假日视图、节日来源切换、4 个分区 tab 巡览（待办/心情/目标/时光）、月历翻月。
@@ -512,7 +548,7 @@ def storyboard():
          lambda: (e2e("parse"), e2e("write")), 10.0),
         # ── 9. 切到「待办」分区 ──
         ("09_todo.png", ["切到「待办」分区", "复盘清单 · 改期 · 归档 · 四级优先级"],
-         lambda: (e2e("cancel"), e2e("btn", "待办")), 9.0),
+         lambda: e2e("btn", "待办"), 9.0),
         # ── 10. 切到「心情」分区 ──
         ("10_mood.png", ["切到「心情」分区", "5 档心情 + 备注 · 月历汇总"],
          lambda: e2e("btn", "心情"), 9.0),
@@ -539,7 +575,7 @@ def storyboard():
          lambda: e2e("advice"), 13.0),
         # ── 18. 导出 ICS（entry 框被 ICS 填满）──
         ("18_export.png", ["点「导出」", "输入框得到完整 ICS 文本 · RFC 5545"],
-         lambda: (e2e("open"), e2e("export")), 11.0),
+         lambda: (scroll_top(), e2e("open"), e2e("export")), 11.0),
         # ── 18b. 导出文本存盘（hidden）──
         (None, ["导出文本落盘"], lambda: e2e("entry", str(FRAME_DIR / "exported.ics")), 0.0),
         # ── 19. 往返：导出文本原样回灌（关键硬证据 #3）──
@@ -548,7 +584,7 @@ def storyboard():
                   e2e("parse"), e2e("write")), 13.0),
         # ── 20. 关于页 ──
         ("20_about.png", ["点「关于」", "Apache-2.0 · CC BY 4.0 (Noto)"],
-         lambda: (e2e("cancel"), e2e("about")), 9.0),
+         lambda: e2e("about"), 9.0),
         # ── 21. 结尾卡 ──
         ("99_outro.png", ["OctoSense 日历", "意图，即应用", "队伍 OMA · ody-cai / mark-liuzh"],
          None, 8.0),
