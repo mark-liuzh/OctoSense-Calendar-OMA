@@ -3443,6 +3443,11 @@ fn todo_schedule(k) {
     ev.timezone = ""
     ev.rrule = ""
     ev.dtstamp = now_dtstamp()
+    // ★ 2026-10-13：必须显式写 start_minutes / end_minutes —— rebalance_auto_events()
+    //   依赖这两个字段算时长，缺省时 new_event() 给 -1，相减得 0 被兜底成 30 分钟，
+    //   导致 60 分钟的待办被错误地按 30 分钟重排。
+    ev.start_minutes = slot.start
+    ev.end_minutes = slot.end
     events.push(ev)
     // ★ v0.5.6：待办转日程产生的事件标记为可自动重排。
     mark_auto(ev.uid)
@@ -3612,6 +3617,10 @@ fn first_event_of_day(d8) {
     let dl = display_list()
     for i in dl.len() {
         let e = dl[i]
+        // ★ 2026-10-13：跳过已取消的事件 —— 「事件详情」默认目标应是
+        //   活跃事件；取消的事件仍留在列表里（供回看），但不该再被
+        //   「事件详情」按钮优先打开。
+        if e.status == "CANCELLED" { continue }
         if date_of(e.dtstart) == d8 { return e.uid }
     }
     return ""
@@ -5526,11 +5535,11 @@ fn rebalance_auto_events() {
             dur = abs_end - abs_start
         }
         if dur <= 0 { dur = 30 }
-        let slot = find_earliest_slot(dur.to_f64(), today, e.uid)
+        let slot = find_earliest_slot(dur, today, e.uid)
         if slot == nil { continue }
         // 当前事件的绝对开始分钟
         let cur_start = date_num(e.dtstart) * 1440 + e.start_minutes
-        let new_start = slot.d8.to_f64() * 1440 + slot.start
+        let new_start = slot.d8 * 1440 + slot.start
         if new_start >= cur_start { continue }
         // 用 reschedule 移动，它会再生成一个历史版本
         if reschedule(e.uid, slot.d8, slot.start, slot.end) == 1 {
@@ -10311,6 +10320,32 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         draw_bg +: {color: c_paper}
         RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
             draw_bg +: {color: c_paper}
+            // 标签切换
+            // ★ 2026-10-13：容器高度从写死 32.0 改 Fit。写死高度时宿主对行内
+            //   ButtonFlat 的合成点击命中异常（5 个 tab 全部点不中，hover 正常），
+            //   Fit 后命中区域与渲染区域一致。
+            RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_paper}
+                detail_tab0_btn := ButtonFlat{text: "笔记" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab1_btn := ButtonFlat{text: "纪要" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab2_btn := ButtonFlat{text: "跟进" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab3_btn := ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab4_btn := ButtonFlat{text: "历史" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+            }
             RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
                 detail_title := Label{text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_bold{font_size: 13}}
@@ -10321,29 +10356,6 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         color_focus: c_warn border_size: 1.0 border_color: c_warn border_color_focus: c_warn}
                     draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff color_focus: #xffffff color_disabled: c_ink3}}
                 ButtonFlat{text: "关闭" height: 26.0 padding: Inset{left: 10 right: 10} on_click: || close_detail()
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-            }
-            // 标签切换
-            RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_paper}
-                ButtonFlat{text: "笔记" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(0)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "纪要" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(1)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "跟进" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(2)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "历史" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(4)
                     draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}

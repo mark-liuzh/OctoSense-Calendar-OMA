@@ -877,26 +877,37 @@ def main():
         #   近千字符）需要的落地时间差异很大；固定预算在 Linux/llvmpipe 下偶发
         #   只收到 0/486 字符就进入下一步。现在用 max(20s, len*0.05) 做总预算，
         #   并坚持「连续 3 次读到完整」才算收敛。
+        #
+        # ⚠️⚠️ 为什么必须「连续 3 次不完整才重灌」而不是「一次不完整就重灌」
+        #   （2026-10-13 实测踩坑）：初始 type_text 后文本是**异步落地**的，
+        #   第一次读往往还是空的。若此时立即 wipe+type，wipe 的删除键会把
+        #   刚发出去的文本吃掉，形成「灌入→被删→再灌→再被删」的死循环，
+        #   最终 20 秒超时实得 0。必须给初始文本一段落地时间，只有连续多次
+        #   确认不完整才说明真的被吃了，那时才重灌。
         budget = max(20.0, len(data) * 0.05)
         deadline = time.time() + budget
         stable = 0
-        # 初始灌入
+        miss = 0
         wipe_entry(already_focused=True)
         type_text(data)
+        time.sleep(1.0)          # 初始落地窗口
         while time.time() < deadline:
             time.sleep(0.5)
             got = entry_text() or ""
             if len(got) >= len(data):
                 stable += 1
+                miss = 0
                 if stable >= 3:
                     break
             else:
-                # 内容被吃短了：队列里还有残余删除键，重灌一次。
-                # 重试时若输入框已空，wipe_entry 不会再发删除键，队列自然排空，
-                # 所以这个循环是收敛的。
                 stable = 0
-                wipe_entry(already_focused=True)
-                type_text(data)
+                miss += 1
+                if miss >= 3:
+                    # 连续 3 次不完整：确认内容真的被吃了，重灌。
+                    miss = 0
+                    wipe_entry(already_focused=True)
+                    type_text(data)
+                    time.sleep(1.0)
         print("已灌入 %d 字符（实得 %d，稳定 %d/3，预算 %.1fs）"
               % (len(data), len(got), stable, budget))
         if len(got) < len(data):
