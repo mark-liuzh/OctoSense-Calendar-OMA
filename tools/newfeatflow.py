@@ -130,7 +130,27 @@ def run_e2e(*args):
 
 
 # ── 生成今天的阻塞事件 ICS ────────────────────────────────────────────
-today = datetime.date.today()
+# ★ 2026-10-14 修复：「今天」必须从**应用 UI** 读（吉祥物文案「今天 M 月 D 日」
+#    + 月历标题「YYYY 年 M 月」），不能用 python 的本机日期 —— card-host 的
+#    local_time 随宿主进程时区（本机实测按 UTC），与 GMT+8 驱动在 00:00–08:00
+#    相差一天：阻塞事件灌到 10-14、排期却排在 app 今天的 10-13 空档 09:00，
+#    后续「>=10:00 / 详情页打开阻塞事件 / 历史版本时间」连锁全崩（跨零点必现）。
+def app_today():
+    y = m = d = None
+    for n in e2e.snap():
+        t = str(n.get("t") or "")
+        mm = re.search(r"(\d{4}) 年 (\d{1,2}) 月", t)
+        if mm and y is None:
+            y, m = int(mm.group(1)), int(mm.group(2))
+        mm = re.search(r"今天 (\d{1,2}) 月 (\d{1,2}) 日", t)
+        if mm:
+            m, d = int(mm.group(1)), int(mm.group(2))
+    if y and m and d:
+        return datetime.date(y, m, d)
+    return datetime.date.today()   # UI 读不到的兜底
+
+
+today = app_today()
 d8 = today.strftime("%Y%m%d")
 ics = (
     "BEGIN:VCALENDAR\r\n"
