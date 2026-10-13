@@ -707,6 +707,18 @@ fill = color.mix(color_focus, focus)
 
 ---
 
+## v0.5.7 更新日志（评审反馈修复 + 详情面板交互修复 + 新功能 e2e 固化）
+
+本版承接 v0.5.5（周报）/ v0.5.6（版本历史与回滚、取消自动释放），落实 v0.5.6 评审报告 P0–P3 全部修复，并修复一个**用户真人实测复现**的详情面板交互缺陷。
+
+- **事件详情面板 tab 「点了没反应」**（真人可见窗口复现）：双重根因 —— ①日视图下详情面板被挤到只剩 88px 可见、tab 内容全部在屏幕外（日历让位规则漏了详情/AI 排程/周报面板）；②makepad `TextInput.set_visible` 是空操作，笔记/纪要两个输入框永远同时占位。修复后面板占位居中、五个 tab 互斥切换、默认「笔记」页。
+- **auto 事件重排正确性**：60 分钟待办不再被错误按 30 分钟重排；「事件详情」默认打开当天首个**活跃**事件（跳过已取消）；取消阻塞事件后 auto 事件正确前移到空档。
+- **P0–P3 评审修复**：天气 re-eval 风暴防御、`HOST_ERROR_WHITELIST` 正则、shellsafe 自引用检测、mail capability 文档同步、rebalance 跨天时长、目标卡长标题挤占按钮、e2e 灌入预算缩放等（提交链见 [`docs/RELEASE-NOTES-v0.5.7.md`](docs/RELEASE-NOTES-v0.5.7.md)）。
+- **测试固化**：历史回滚 + 取消后自动释放合并场景 e2e（18 项断言，含 UI 回滚闭环）；修复驱动「今天」与应用进程日期对齐（跨零点不再连锁崩）。
+- **验证**：macOS 串行全量回归 **9/9 PASS**（详见 [`docs/REGRESSION-v0.5.7.md`](docs/REGRESSION-v0.5.7.md)）。
+
+---
+
 ## 参赛信息
 
 **2026 GOSIM Agentic App Hackathon · 赛道：应用**
@@ -716,39 +728,39 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.4`（**模型可解释性**：模型不只给改期时段，还生成「为什么保留固定事件」的权重解读，过七道闸才展示；邮件读取数量可设；演示视频重录，往返 0/0/4 真实呈现） |
+| 版本 | `0.5.7`（**评审反馈修复 + 详情面板交互修复**：事件详情五个 tab 互斥切换、auto 事件重排正确性、P0–P3 修复、历史回滚/自动释放 e2e 固化；macOS 全量回归 9/9 PASS） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
-| 发布基准 | GitHub Release [`v0.5.4`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.4)（id 410209599；tag = `v0.5.4` = `d1230d0`；2026-10-12）· digest `cc8178644ffce785…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-12；下载件同样 PASSED 且与仓库逐字节一致） |
-| 验证 | 静态门禁 **13 项**全过 · 七道闸夹具 **38/38** · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/4**）· 宿主 `[E]` **0** |
-| 提交 issue | [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 发布基准 | GitHub Release `v0.5.7`（创建后回填 id；tag = `v0.5.7`；2026-10-14）· digest `cb0bb395…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14） |
+| 验证 | 静态门禁 **13 项**全过 · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/N**）· 全量回归 **9/9**（含新功能 18/18）· 宿主 `[E]` **0** |
+| 提交 issue | v0.5.7（创建后回填）· [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ★ 当前权威值 = v0.5.4（2026-10-12）
+### ★ 当前权威值 = v0.5.7（2026-10-14）
 
 > 本README 里**只有这一节**是当前权威值。其余「历史记录」节的 digest / signature 均已作废，
 > 只为追溯留档，不可作为发布基准。
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `d1230d0`（分支 `v0.5.4`，已合入 main） |
-| Tag | `v0.5.4` |
+| Commit | `TBD`（分支 `v0.5.7`，发布提交后回填，将合入 main） |
+| Tag | `v0.5.7` |
 | capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
-| 验证 | 静态门禁 **13 项** · 七道闸夹具 **38/38** · `run_e2e` **10/10** · `run_conflict` **21/21** · 8 条流程宿主 `[E]` **0** |
+| 验证 | 静态门禁 **13 项** · 全量回归 **9/9**（`run_e2e` 10/10 · `run_conflict` 21/21 · `run_new_features` 18/18）· 宿主 `[E]` **0**（2026-10-14，详见 [`docs/REGRESSION-v0.5.7.md`](docs/REGRESSION-v0.5.7.md)） |
 | 往返无损 | 新增 0 / 改期 0 / 跳过 N（模型参与改期 + SEQUENCE 递增之后**仍然成立**） |
-| Bundle blake3 | `cc8178644ffce785b8ecd2208ee28923ebb3d595e9b5b9c94e212404c588950a` |
+| Bundle blake3 | `cb0bb3956792c1abf27120f2b7728af9db4e1e08b1dccf8e60df3f855c27e79d` |
 | Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |
-| Release | [`v0.5.4`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.4)（id 410209599） |
-| Zip | `octosense-calendar-0.5.4-bundle.zip` · 2,663,147 bytes |
-| Zip sha256 | `10e9c41a4aae6be534b9f20690389b5c39144850856dec1b18198c6661e0adfd` |
-| 提交 issue | [#217](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) |
+| Release | `v0.5.7`（id 创建后回填） |
+| Zip | `octosense-calendar-0.5.7-bundle.zip` · 2,678,169 bytes |
+| Zip sha256 | `9992cbf92c3a42fb460ba04410f690f7e90e057c958ed13ecc3fea7dfe1adf91` |
+| 提交 issue | 创建后回填 |
 
-**`hub check` 已跑过**（2026-10-12）：
+**`hub check` 已跑过**（2026-10-14）：
 
 ```
-com.oma.octosense.calendar 0.5.4 — PASSED
-  grants: capabilities {"mail", "model", "net", "storage"},
+com.oma.octosense.calendar 0.5.7 — PASSED
+  declarations: capabilities {"mail", "model", "net", "storage"},
           hosts {"api.open-meteo.com", "geocoding-api.open-meteo.com"},
           storage 16777216 bytes, agent none
 ```
@@ -759,20 +771,20 @@ com.oma.octosense.calendar 0.5.4 — PASSED
 hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
 ```
 
-**四处一致性（2026-10-12 逐处实测）**：本地工作区 · git `v0.5.4` 分支 HEAD ·
-Release zip 解包件 · 从 Release 下载回来的 zip —— 四处的
-`bundle_blake3` 全部等于 `cc817864…`，`diff -r` 无差异，
-后两者 `hub check` 均 PASSED。
+**本版要点**（详见上方「v0.5.7 更新日志」节）：
 
-**本版要点**（详见上方「v0.5.4 更新日志」节）：
-
-- **模型可解释性**：`model.complete` 新增 `keep_why` 字段，模型解释「为什么保留固定事件」；
-  方案过七道闸后解读展示在卡片视图，被闸拦下的解释不采信。
-- **演示视频重录**：旧版录制存在静默失败（画面与字幕不符）；修复驱动脚本三处问题后重录，
-  「新增 0 / 改期 0 / 跳过 4」在画面中真实呈现。
+- **详情面板 tab 修复**：日历让位 + TextInput 显隐外壳绕行，五个 tab 互斥切换、默认「笔记」页，真人实测验收。
+- **auto 事件重排正确性**：待办排期写分钟字段、详情入口跳过已取消事件、取消阻塞后 auto 前移。
 - **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
 
-详见 [`docs/REALHOST-CHECKLIST-v0.5.4.md`](docs/REALHOST-CHECKLIST-v0.5.4.md)（model.complete 真机验证清单）。
+详见 [`docs/RELEASE-NOTES-v0.5.7.md`](docs/RELEASE-NOTES-v0.5.7.md) · [`docs/REGRESSION-v0.5.7.md`](docs/REGRESSION-v0.5.7.md)。
+
+### v0.5.4（历史记录，**已作废**）
+
+v0.5.4（commit `d1230d0`，App Hub [#217](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217)）：
+模型可解释性（`keep_why`）+ 邮件读取数量可设。digest `cc817864…`、Release id `410209599`、
+zip `octosense-calendar-0.5.4-bundle.zip` 均已作废，只为追溯留档。
+详见 [`docs/REALHOST-CHECKLIST-v0.5.4.md`](docs/REALHOST-CHECKLIST-v0.5.4.md)。
 
 ### v0.5.3（历史记录，**已作废**）
 
