@@ -731,10 +731,10 @@ fill = color.mix(color_focus, focus)
 | 版本 | `0.5.7`（**评审反馈修复 + 详情面板交互修复**：事件详情五个 tab 互斥切换、auto 事件重排正确性、P0–P3 修复、历史回滚/自动释放 e2e 固化；macOS 全量回归 9/9 PASS） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
-| 发布基准 | GitHub Release `v0.5.7`（创建后回填 id；tag = `v0.5.7`；2026-10-14）· digest `cb0bb395…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14） |
+| 发布基准 | GitHub Release [`v0.5.7`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.7)（id 411899329；tag = `v0.5.7` = `e83d4a3`；2026-10-14）· digest `cb0bb395…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14；下载件同样 PASSED 且 sha256 逐字节一致） |
 | 验证 | 静态门禁 **13 项**全过 · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/N**）· 全量回归 **9/9**（含新功能 18/18）· 宿主 `[E]` **0** |
-| 提交 issue | v0.5.7（创建后回填）· [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 提交 issue | [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ 当前权威值 = v0.5.7（2026-10-14）
 
@@ -743,7 +743,7 @@ fill = color.mix(color_focus, focus)
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `TBD`（分支 `v0.5.7`，发布提交后回填，将合入 main） |
+| Commit | `e83d4a3`（分支 `v0.5.7`，已合入 main） |
 | Tag | `v0.5.7` |
 | capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
@@ -751,10 +751,10 @@ fill = color.mix(color_focus, focus)
 | 往返无损 | 新增 0 / 改期 0 / 跳过 N（模型参与改期 + SEQUENCE 递增之后**仍然成立**） |
 | Bundle blake3 | `cb0bb3956792c1abf27120f2b7728af9db4e1e08b1dccf8e60df3f855c27e79d` |
 | Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |
-| Release | `v0.5.7`（id 创建后回填） |
+| Release | [`v0.5.7`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.7)（id 411899329） |
 | Zip | `octosense-calendar-0.5.7-bundle.zip` · 2,678,169 bytes |
 | Zip sha256 | `9992cbf92c3a42fb460ba04410f690f7e90e057c958ed13ecc3fea7dfe1adf91` |
-| 提交 issue | 创建后回填 |
+| 提交 issue | [#223](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) |
 
 **`hub check` 已跑过**（2026-10-14）：
 
@@ -770,6 +770,10 @@ com.oma.octosense.calendar 0.5.7 — PASSED
 ```bash
 hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
 ```
+
+**下载件复核（2026-10-14 逐处实测）**：从 Release 下载 zip → sha256 与上表逐字节一致 →
+解包 `hub check` **PASSED**。本地工作区 · git `v0.5.7` 分支 HEAD · Release zip 解包件 ·
+从 Release 下载回来的 zip —— 四处 `bundle_blake3` 全部等于 `cb0bb395…`。
 
 **本版要点**（详见上方「v0.5.7 更新日志」节）：
 

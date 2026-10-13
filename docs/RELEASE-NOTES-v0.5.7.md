@@ -7,9 +7,9 @@
 
 | 项 | 值 |
 |---|---|
-| Commit | `TBD`（发布提交，创建后回填） |
+| Commit | `e83d4a38283a2a9751b1be42056d55313fa80e6a`（分支 `v0.5.7`，已合入 main） |
 | Tag | `v0.5.7` |
-| Release | id 创建后回填 |
+| Release | id `411899329`（已发布，非 draft） |
 | Zip | `octosense-calendar-0.5.7-bundle.zip` · 2,678,169 bytes · sha256 `9992cbf92c3a42fb460ba04410f690f7e90e057c958ed13ecc3fea7dfe1adf91` |
 | Bundle blake3 | `cb0bb3956792c1abf27120f2b7728af9db4e1e08b1dccf8e60df3f855c27e79d` |
 | Publisher key id | `OMA` |
