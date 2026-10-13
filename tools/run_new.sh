@@ -17,7 +17,7 @@ set -u
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="$ROOT/.runtime"
-EV="$OUT/evidence"
+EV="${EV:-$OUT/evidence}"
 mkdir -p "$EV"
 
 # shellcheck source=tools/_env.sh
