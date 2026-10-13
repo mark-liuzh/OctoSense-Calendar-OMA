@@ -749,7 +749,7 @@ fill = color.mix(color_focus, focus)
 | 发布基准 | GitHub Release [`v0.5.8`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.8)（id 412195625；tag = `v0.5.8` = `a544150b`；2026-10-14）· digest `9a1f6a41…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14；下载件同样 PASSED 且 sha256 逐字节一致） |
 | 验证 | 静态门禁 **13 项**全过 · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/N**）· 全量回归 **9/9**（含新功能 18/18）· 宿主 `[E]` **0** |
-| 提交 issue | [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 提交 issue | [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ 当前权威值 = v0.5.8（2026-10-14）
 
@@ -769,7 +769,7 @@ fill = color.mix(color_focus, focus)
 | Release | [`v0.5.8`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.8)（id 412195625） |
 | Zip | `octosense-calendar-0.5.8-bundle.zip` · 2,765,551 bytes |
 | Zip sha256 | `6496c3d2bab8a6748d3f0a1cbe53f2c5e354a233bd8e0f77d64e657e606bfa4b` |
-| 提交 issue | [#2](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/issues/2) |
+| 提交 issue | [#229](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) |
 
 **`hub check` 已跑过**（2026-10-14）：
 
