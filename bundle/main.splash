@@ -5283,7 +5283,8 @@ fn toggle_more() {
 // ★★★ v0.5.6 · 事件版本历史与回滚
 //
 // 每次改期前把当前事件完整克隆一份存进 history[uid]，最多保留 5 个版本。
-// 导入事件不记历史（避免把外部批量数据塞爆本地存储）。
+// ⚠️ 导入事件也记历史（代码只校验 uid 非空，不看来源）。
+//    存储模型：N 事件 × 5 版 × ~0.5 KB，1000 事件 ≈ 2.5 MB，在 16 MiB 内可控。
 // 版本数据只存本地，不参与 ICS 导出。
 //════════════════════════════════════════════════════════════════
 
@@ -5516,7 +5517,14 @@ fn rebalance_auto_events() {
         if !is_auto(e.uid) { continue }
         if e.all_day { continue }
         if e.rrule != "" { continue }
+        // ★ v0.5.7 P2-3：跨天事件（23:00 → 次日 01:00）end_minutes < start_minutes，
+        //   直接用差值会得到负时长。改用绝对分钟数算真实跨度，只有真正脏数据才兜底 30。
         let dur = e.end_minutes - e.start_minutes
+        if dur <= 0 {
+            let abs_start = date_num(e.dtstart) * 1440 + e.start_minutes
+            let abs_end   = date_num(e.dtend)   * 1440 + e.end_minutes
+            dur = abs_end - abs_start
+        }
         if dur <= 0 { dur = 30 }
         let slot = find_earliest_slot(dur.to_f64(), today, e.uid)
         if slot == nil { continue }
