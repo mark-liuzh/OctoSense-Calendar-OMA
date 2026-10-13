@@ -7,12 +7,12 @@
 
 | 项 | 值 |
 |---|---|
-| Commit | `TBD`（分支 `v0.5.6`） |
+| Commit | `9506aba01d1ebf2ea0d8b24ec002c4f8c363b575`（分支 `v0.5.6`） |
 | Tag | `v0.5.6` |
-| Release | id `TBD` |
-| Zip | `octosense-calendar-0.5.6.zip` · bytes `TBD` · sha256 `TBD` |
-| Bundle blake3 | `50355e821ef67c215bea45e9166a1e62c5c0246b6cc17a1f670b15e52c50f2c8` |
-| Publisher key id | `OMA`（待 Ody 重签） |
+| Release | id `411252144` |
+| Zip | `octosense-calendar-0.5.6-bundle.zip` · 2,677,821 bytes · sha256 `e19cad600d190ee4f9b95a5986d8d5081de7df6ccf47684538f1515d7dc19cf8` |
+| Bundle blake3 | `1a61cbac679815171c0f9e9a87da940b93d22365364c0aa3e32fc675671368e6` |
+| Publisher key id | `OMA` |
 
 ## 一、新增功能
 

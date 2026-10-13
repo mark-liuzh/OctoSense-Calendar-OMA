@@ -1,4 +1,6 @@
-# OctoSense 日历 v0.5.5 发布说明
+# OctoSense 日历 v0.5.5 发布说明（预发布草稿）
+
+> **注意**：v0.5.5 未单独打 tag、也未单独发布 release，其功能实际随 v0.5.6 一起发布。本文档保留为设计稿/预发布草稿，发布件口径以 v0.5.6 为准。
 
 日期：2026-10-13 · 基线：v0.5.4（commit `a04e9e8`）
 依据：对话式 AI 排程、待办转日程、事件详情页、OKR/里程碑视图与手动周报生成
@@ -7,11 +9,11 @@
 
 | 项 | 值 |
 |---|---|
-| Commit | `TBD`（分支 `v0.5.5`） |
-| Tag | `v0.5.5` |
-| Release | id `TBD` |
-| Zip | `octosense-calendar-0.5.5.zip` · bytes `TBD` · sha256 `TBD` |
-| Bundle blake3 | `408ad0e3b4b9c51944757eb4b9ff784ba95201447a86c3ef089e2c2c0656893f` |
+| Commit | 无独立 release commit（功能并入 v0.5.6 `9506aba`） |
+| Tag | 无 |
+| Release | 无 |
+| Zip | 无 |
+| Bundle blake3 | 无（v0.5.6 实际值为 `1a61cbac…`） |
 | Publisher key id | `OMA` |
 
 ## 一、新增功能
