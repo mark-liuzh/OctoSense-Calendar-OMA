@@ -12,10 +12,10 @@
   },
   "id": "com.oma.octosense.calendar",
   "integrity": {
-    "bundle_blake3": "cb0bb3956792c1abf27120f2b7728af9db4e1e08b1dccf8e60df3f855c27e79d",
+    "bundle_blake3": "9a1f6a4162493a28f9b8659369ce61c7a679debbeb06c15c97ab672fd72069f5",
     "signature": {
       "key_id": "OMA",
-      "value": "28bb6c6c8787e918d943edab3df375fae807561ad1031b4cc946c9254beba094ca4f26ff810ab90099b491a68a75b601cc9a0a18d42c035babf81f921ad8a303"
+      "value": "8668c1ee6434426a1f2f0109ec113a93759d97f1c702379c1a88ee99d03089437fe39132af7e2509d773fb4c0579cb3b636ca7a84132990a24dca0749923f905"
     }
   },
   "name": "OctoSense 日历",
@@ -29,5 +29,5 @@
   "storage": {
     "max_bytes": null
   },
-  "version": "0.5.7"
+  "version": "0.5.8"
 }

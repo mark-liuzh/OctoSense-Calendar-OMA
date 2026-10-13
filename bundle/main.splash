@@ -3234,6 +3234,8 @@ fn apply_ai_schedule() {
         ev.summary = d.summary
         ev.dtstart = d.d8 + "T" + clock_compact(d.start) + "00"
         ev.dtend = d.d8 + "T" + clock_compact(d.end) + "00"
+        ev.start_minutes = d.start
+        ev.end_minutes = d.end
         ev.all_day = false
         ev.timezone = ""
         ev.rrule = repeat_rule(d.repeat)
