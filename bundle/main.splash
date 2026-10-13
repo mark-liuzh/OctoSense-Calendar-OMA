@@ -530,6 +530,8 @@ let WX_LIVE_OLD = "wx_live2.json" // 旧格式（裸行数组，无时间戳）�
 let wx_live_rows = []            // 内存行数组（联网/缓存同一份）
 let wx_live_fetched = 0          // 上次成功取数的时间戳（秒，time_now 返的）
 let wx_live_tried = false        // 本会话是否已尝试过拉网（防重复拉，**不复用 fetched**）
+let wx_live_fail_count = 0       // ★ v0.5.7：连续联网失败次数，用于退避
+let wx_live_fail_at = 0          // ★ v0.5.7：最近一次失败时间戳（秒）
 
 // ★ v0.4.1：新鲜度与保留窗口（两个真实缺陷的补丁）
 //   TTL：预报是有保质期的 —— 三天前抓的「明天」不等于明天。
@@ -1489,7 +1491,7 @@ fn build_advice(conflicts, list) {
         let has_slot = slot != nil
         let s0 = -1
         let s1 = -1
-        let why = "当天 09:00-21:00 已无可放空档，建议改日或缩短时长"
+        let why = "当天 09:00 – 21:00 已无可放空档，建议改日或缩短时长"
         if all_day_block {
             why = "当天有全天日程占着整天，建议改到另一天"
         } else if has_slot {
@@ -2694,9 +2696,9 @@ fn sync_detail_panel() {
     ui.detail_follow_list.set_text(join_lines(n.followups))
     ui.detail_link_list.set_text(join_lines(n.links))
     ui.detail_history_list.set_text(detail_history_text())
-    // 标签页显隐
-    ui.detail_note_in.set_visible(detail_tab == 0)
-    ui.detail_minutes_in.set_visible(detail_tab == 1)
+    // 标签页显隐 —— 笔记/纪要切外壳（见 markup 处注释：TextInput.set_visible 是空操作）
+    ui.detail_note_page.set_visible(detail_tab == 0)
+    ui.detail_minutes_page.set_visible(detail_tab == 1)
     ui.detail_follow_page.set_visible(detail_tab == 2)
     ui.detail_link_page.set_visible(detail_tab == 3)
     ui.detail_history_page.set_visible(detail_tab == 4)
@@ -3441,6 +3443,11 @@ fn todo_schedule(k) {
     ev.timezone = ""
     ev.rrule = ""
     ev.dtstamp = now_dtstamp()
+    // ★ 2026-10-13：必须显式写 start_minutes / end_minutes —— rebalance_auto_events()
+    //   依赖这两个字段算时长，缺省时 new_event() 给 -1，相减得 0 被兜底成 30 分钟，
+    //   导致 60 分钟的待办被错误地按 30 分钟重排。
+    ev.start_minutes = slot.start
+    ev.end_minutes = slot.end
     events.push(ev)
     // ★ v0.5.6：待办转日程产生的事件标记为可自动重排。
     mark_auto(ev.uid)
@@ -3610,6 +3617,10 @@ fn first_event_of_day(d8) {
     let dl = display_list()
     for i in dl.len() {
         let e = dl[i]
+        // ★ 2026-10-13：跳过已取消的事件 —— 「事件详情」默认目标应是
+        //   活跃事件；取消的事件仍留在列表里（供回看），但不该再被
+        //   「事件详情」按钮优先打开。
+        if e.status == "CANCELLED" { continue }
         if date_of(e.dtstart) == d8 { return e.uid }
     }
     return ""
@@ -4819,7 +4830,14 @@ fn sync_panels() {
     //   不让位等于让面板叠在月历下面 —— 实测最坏组合月历底端已到 862px，
     //   再叠一个面板必然超出 892px 视口。让位后面板占的就是 import_panel 同一块空间，
     //   竖向几何与「导入」打开时完全一致。
-    let cal_on = tab == 0 && !about_open && !import_open && !wx_city_open
+    // ★ 2026-10-13（P1 修复）：详情 / AI 排程 / 周报三个面板**同样让位**。
+    //   它们与 import_panel 抢同一块竖向空间（见下方「三个面板抢同一块竖向空间」），
+    //   但此前 cal_on 没有排除它们 —— 日视图下头顶(192)+cal_box(455)+tools(62)
+    //   已占到 761px，详情面板(~190px) 只剩 88px 可见（窗口内容高 849），
+    //   tab 内容全部在屏幕外：点「笔记↔纪要」（都是 80px 输入框，面板高度不变）
+    //   看起来「没反应」，点「跟进/链接/历史」（Fit 内容较矮，高度变化）才有反应。
+    //   真人实测复现（2026-10-13）。让位后 192+62+190 ≈ 444px，远低于视口。
+    let cal_on = tab == 0 && !about_open && !import_open && !wx_city_open && !ai_sched_open && !detail_open && !report_open
     // 工具条（导入/导出/计数）是日程的数据出入口，只在日程分区出现。
     ui.tools.set_visible(tab == 0)
     ui.cal_box.set_visible(cal_on)
@@ -5281,7 +5299,8 @@ fn toggle_more() {
 // ★★★ v0.5.6 · 事件版本历史与回滚
 //
 // 每次改期前把当前事件完整克隆一份存进 history[uid]，最多保留 5 个版本。
-// 导入事件不记历史（避免把外部批量数据塞爆本地存储）。
+// ⚠️ 导入事件也记历史（代码只校验 uid 非空，不看来源）。
+//    存储模型：N 事件 × 5 版 × ~0.5 KB，1000 事件 ≈ 2.5 MB，在 16 MiB 内可控。
 // 版本数据只存本地，不参与 ICS 导出。
 //════════════════════════════════════════════════════════════════
 
@@ -5514,13 +5533,20 @@ fn rebalance_auto_events() {
         if !is_auto(e.uid) { continue }
         if e.all_day { continue }
         if e.rrule != "" { continue }
+        // ★ v0.5.7 P2-3：跨天事件（23:00 → 次日 01:00）end_minutes < start_minutes，
+        //   直接用差值会得到负时长。改用绝对分钟数算真实跨度，只有真正脏数据才兜底 30。
         let dur = e.end_minutes - e.start_minutes
+        if dur <= 0 {
+            let abs_start = date_num(e.dtstart) * 1440 + e.start_minutes
+            let abs_end   = date_num(e.dtend)   * 1440 + e.end_minutes
+            dur = abs_end - abs_start
+        }
         if dur <= 0 { dur = 30 }
-        let slot = find_earliest_slot(dur.to_f64(), today, e.uid)
+        let slot = find_earliest_slot(dur, today, e.uid)
         if slot == nil { continue }
         // 当前事件的绝对开始分钟
         let cur_start = date_num(e.dtstart) * 1440 + e.start_minutes
-        let new_start = slot.d8.to_f64() * 1440 + slot.start
+        let new_start = slot.d8 * 1440 + slot.start
         if new_start >= cur_start { continue }
         // 用 reschedule 移动，它会再生成一个历史版本
         if reschedule(e.uid, slot.d8, slot.start, slot.end) == 1 {
@@ -6938,6 +6964,13 @@ fn wx_live_one(i) {
 fn wx_live_fetch() {
     if wx_live_tried { return }
     wx_live_tried = true
+    // ★ v0.5.7 P0-1：连续失败退避。失败次数越多、冷却越长，
+    //   避免宿主机网络异常时反复发起请求触发 re-eval 风暴。
+    if wx_live_fail_count > 0 {
+        let cooldown = 60 * wx_live_fail_count    // 1 次 60s，2 次 120s，最多 300s
+        if cooldown > 300 { cooldown = 300 }
+        if (ipart(time_now()) - wx_live_fail_at) < cooldown { return }
+    }
     let rows = []
     for i in 0..7 {
         let r = wx_live_one(i)
@@ -6950,6 +6983,10 @@ fn wx_live_fetch() {
         wx_live_fetched = ipart(time_now())
         // v0.4.1：写「信封」格式（带 fetched_at），由 wx_live_save 顺带瘦身。
         wx_live_save()
+        wx_live_fail_count = 0
+    } else {
+        wx_live_fail_count = wx_live_fail_count + 1
+        wx_live_fail_at = ipart(time_now())
     }
     refresh_all()
 }
@@ -9639,9 +9676,11 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card0 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t0 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t0 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p0 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d0 := Label{text: "" draw_text.color: c_ink3
@@ -9665,8 +9704,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                         draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar0 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s00 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
@@ -9703,14 +9741,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card1 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t1 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t1 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p1 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d1 := Label{text: "" draw_text.color: c_ink3
                         draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    // ★ v0.5.5：为这个目标设期限
                     ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_set_due(1, 14)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -9727,9 +9768,8 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         on_click: || goal_del(1)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar1 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s10 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
@@ -9766,14 +9806,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card2 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t2 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t2 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p2 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d2 := Label{text: "" draw_text.color: c_ink3
                         draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    // ★ v0.5.5：为这个目标设期限
                     ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_set_due(2, 14)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -9790,9 +9833,8 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         on_click: || goal_del(2)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar2 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s20 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
@@ -10285,6 +10327,32 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
         draw_bg +: {color: c_paper}
         RoundedView{width: Fill height: Fit flow: Down padding: Inset{left: 20 right: 20 top: 4 bottom: 12} spacing: 8
             draw_bg +: {color: c_paper}
+            // 标签切换
+            // ★ 2026-10-13：容器高度从写死 32.0 改 Fit。写死高度时宿主对行内
+            //   ButtonFlat 的合成点击命中异常（5 个 tab 全部点不中，hover 正常），
+            //   Fit 后命中区域与渲染区域一致。
+            RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_paper}
+                detail_tab0_btn := ButtonFlat{text: "笔记" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(0)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab1_btn := ButtonFlat{text: "纪要" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(1)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab2_btn := ButtonFlat{text: "跟进" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(2)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab3_btn := ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+                detail_tab4_btn := ButtonFlat{text: "历史" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(4)
+                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
+                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
+                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
+            }
             RoundedView{width: Fill height: Fit flow: Right spacing: 8 draw_bg +: {color: c_paper}
                 detail_title := Label{text: "" draw_text.color: c_ink
                     draw_text.text_style: theme.font_bold{font_size: 13}}
@@ -10299,39 +10367,25 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
             }
-            // 标签切换
-            RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_paper}
-                ButtonFlat{text: "笔记" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(0)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "纪要" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(1)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "跟进" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(2)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "链接" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(3)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-                ButtonFlat{text: "历史" height: 28.0 padding: Inset{left: 12 right: 12} on_click: || set_detail_tab(4)
-                    draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
-                        color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                    draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
-            }
             // 笔记页
+            // ★ 2026-10-13（P1 修复）：TextInput 的 set_visible 是**空操作**
+            //   （makepad Widget::set_visible 默认实现 `{}`，text_input.rs 没有覆写；
+            //    只有 View 系组件真正响应）。直接对输入框 set_visible 会让
+            //   笔记/纪要两个页面永远同时占位 —— 点 tab「看起来没反应」。
+            //   改为包一层 RoundedView 外壳，显隐切外壳（View 系，有效）。
+            detail_note_page := RoundedView{width: Fill height: Fit flow: Down draw_bg +: {color: c_paper}
             detail_note_in := TextInput{width: Fill height: 80 empty_text: "议程、想法、背景…"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
                     border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            }
             // 纪要页（与笔记同位，靠显隐切换）
+            detail_minutes_page := RoundedView{width: Fill height: Fit flow: Down draw_bg +: {color: c_paper}
             detail_minutes_in := TextInput{width: Fill height: 80 empty_text: "会议纪要…"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
                     border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            }
             // 跟进页
             detail_follow_page := RoundedView{width: Fill height: Fit flow: Down spacing: 6 draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: 38.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}

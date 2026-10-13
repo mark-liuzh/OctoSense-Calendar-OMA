@@ -515,6 +515,10 @@ DOT_PALETTE = [
     ("INK",     (0x19, 0x17, 0x14)),
 ]
 DOT_TOL = 70          # 单通道距离上限；抗锯齿边缘色距离更大，会被自然滤掉
+# ★ 2026-10-13（P3-2）：CJK 细笔画文字（如调休「班」字）抗锯齿后，
+#   中心 5×5 采样窗可能只采到白色间隙，导致偶发 FAIL。
+#   改为统计文字矩形内**语义色像素数量**，≥ GLYPH_MIN_PIXELS 即判定存在。
+GLYPH_MIN_PIXELS = 10
 
 
 def _classify(rgb):
@@ -548,6 +552,28 @@ def dot_kinds(w, ch, buf, rect, sc, radius=2):
     if not votes:
         return "NONE"
     return max(votes.items(), key=lambda kv: (kv[1], -len(kv[0])))[0]
+
+
+def glyph_kind(w, h, ch, buf, rect, sc, target="EVENT"):
+    """对 CJK 文字这类**笔画细、抗锯齿后中心采样窗易落空**的控件做像素判定。
+
+    不取中心小窗，而是把 rect 对应的实际像素矩形全部扫一遍，
+    统计归类为 target 的像素数；≥ GLYPH_MIN_PIXELS 即认为该字形存在。
+    背景见 P3-2：宿主以 1.25× 像素密度渲染 11px CJK，「班」字中心 5×5
+    投票法偶发只采到笔画间隙，改成计数法后稳定。
+    """
+    x0 = int(round(rect[0] * sc))
+    y0 = int(round(rect[1] * sc))
+    x1 = int(round((rect[0] + rect[2]) * sc))
+    y1 = int(round((rect[1] + rect[3]) * sc))
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(w - 1, x1), min(h - 1, y1)
+    count = 0
+    for yy in range(y0, y1 + 1):
+        for xx in range(x0, x1 + 1):
+            if _classify(zoom_px(w, ch, buf, xx, yy)) == target:
+                count += 1
+    return target if count >= GLYPH_MIN_PIXELS else "NONE"
 
 
 def zoom_px(w, ch, buf, x, y):
@@ -846,26 +872,44 @@ def main():
         #   错，极具误导性。靠 sleep 猜队列排空时长不可靠（试过 0.4s / 1.2s 都会漏），
         #   直接比对结果最稳，也与平台无关。
         got = ""
-        for attempt in range(5):
-            wipe_entry(already_focused=True)
-            type_text(data)
-            # ⚠️ 必须**连续多次**读到完整才算稳：删除键异步落地，刚 type 完立刻读
-            #    往往还是完整的，随后才被队列里残余的删除键吃掉。
-            #    （试过读一次 + sleep 1.5s，会「打地鼠」：这一份对了、下一份又变 0。）
-            #    重试时若输入框已空，wipe_entry 不会再发任何删除键，于是队列自然排空，
-            #    所以这个循环是**收敛**的。
-            stable = 0
-            for _ in range(4):
-                time.sleep(0.9)
-                got = entry_text() or ""
-                if len(got) < len(data):
-                    break
+        # ★ 2026-10-13（P3-1）：预算随内容长度缩放，不再固定 5 轮 × 4 次 × 0.9s。
+        #   随着 splash 体积增长，小 ICS（如 seed.ics 几十字符）和大 ICS（edge.ics
+        #   近千字符）需要的落地时间差异很大；固定预算在 Linux/llvmpipe 下偶发
+        #   只收到 0/486 字符就进入下一步。现在用 max(20s, len*0.05) 做总预算，
+        #   并坚持「连续 3 次读到完整」才算收敛。
+        #
+        # ⚠️⚠️ 为什么必须「连续 3 次不完整才重灌」而不是「一次不完整就重灌」
+        #   （2026-10-13 实测踩坑）：初始 type_text 后文本是**异步落地**的，
+        #   第一次读往往还是空的。若此时立即 wipe+type，wipe 的删除键会把
+        #   刚发出去的文本吃掉，形成「灌入→被删→再灌→再被删」的死循环，
+        #   最终 20 秒超时实得 0。必须给初始文本一段落地时间，只有连续多次
+        #   确认不完整才说明真的被吃了，那时才重灌。
+        budget = max(20.0, len(data) * 0.05)
+        deadline = time.time() + budget
+        stable = 0
+        miss = 0
+        wipe_entry(already_focused=True)
+        type_text(data)
+        time.sleep(1.0)          # 初始落地窗口
+        while time.time() < deadline:
+            time.sleep(0.5)
+            got = entry_text() or ""
+            if len(got) >= len(data):
                 stable += 1
-            if stable >= 3:
-                break
-            print("  重试 %d/5：期望 %d 字符，实得 %d"
-                  % (attempt + 1, len(data), len(got)))
-        print("已灌入 %d 字符（实得 %d）" % (len(data), len(got)))
+                miss = 0
+                if stable >= 3:
+                    break
+            else:
+                stable = 0
+                miss += 1
+                if miss >= 3:
+                    # 连续 3 次不完整：确认内容真的被吃了，重灌。
+                    miss = 0
+                    wipe_entry(already_focused=True)
+                    type_text(data)
+                    time.sleep(1.0)
+        print("已灌入 %d 字符（实得 %d，稳定 %d/3，预算 %.1fs）"
+              % (len(data), len(got), stable, budget))
         if len(got) < len(data):
             # ★ 2026-10-12（v0.5.2 W1-2）：**非零退出码中断流程**。
             #   原来只 print 一行 FAIL 就 return 0，shell 那侧 `| tail -1` 只看输出、
@@ -1194,7 +1238,8 @@ def main():
         #   现在对**每一个**都取色，输出逗号分隔序列；
         #   同时给出 BAN_KIND_DETAIL（含坐标），红了能直接定位是哪一个。
         if m["班"]:
-            bks = [dot_kinds(w, ch, buf, r, sc) for r in m["班"]]
+            # ★ 2026-10-13（P3-2）：「班」字用计数法，不用中心 5×5 投票法。
+            bks = [glyph_kind(w, h, ch, buf, r, sc, "EVENT") for r in m["班"]]
             print("BANKIND=" + ",".join(bks))
             print("BAN_KIND_DETAIL=" + " ".join(
                 "%d,%d=%s" % (r[0], r[1], k) for r, k in zip(m["班"], bks)))

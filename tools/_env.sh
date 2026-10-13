@@ -237,6 +237,14 @@ host_error_count() {
     n=$(grep '\[E\]' "$1" 2>/dev/null | grep -vE "$HOST_ERROR_WHITELIST" | grep -c '' || true)
     n=${n:-0}
   fi
+  # ★ 2026-10-13（P3-4）：把 `[ui-hang]` 峰值纳入监控基线，但**非阻断**。
+  #   Linux/Xvfb/llvmpipe 软件渲染下出现 200–350 ms 的 ui-hang 是预期表现，
+  #   不是应用缺陷；这里只打印峰值供报告引用，不影响错误数判定。
+  local hang_max
+  hang_max=$(grep -oE '\[ui-hang\] [0-9]+ ms' "$1" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+  if [ -n "$hang_max" ]; then
+    echo "  [i] ui-hang 峰值: ${hang_max} ms（llvmpipe 软件渲染下预期 >200 ms，非应用缺陷）" >&2
+  fi
   printf '%s' "$n"
 }
 
@@ -249,7 +257,7 @@ host_error_count() {
 #   现在三条都以 `^\[E\]` 起手并紧跟宿主自己的源码位置标识，跨不到别的行去。
 #   （下方 selftest 里有一条构造用例专门钉住这个行为：含 "connection refused"
 #   字样的**非音频**错误必须**不再**被扣除。）
-HOST_ERROR_WHITELIST='^\[E\] pulse_audio\.rs:[0-9][0-9]*: pa_context_connect failed|^\[E\] pulseaudio[^\[]*Connection refused|^\[E\] ALSA fallback'
+HOST_ERROR_WHITELIST='^\[E\] ([^ ]*/)?pulse_audio\.rs:[0-9]+:[0-9]+ - PulseAudio: pa_context_connect failed|^\[E\] ([^ ]*/)?pulse_audio\.rs:[0-9]+:[0-9]+ - pulse_audio: pa_context_connect failed|^\[E\] ([^ ]*/)?pulseaudio[^\[]*Connection refused|^\[E\] ALSA fallback'
 
 # ── 宿主进程探测 ──────────────────────────────────────────────────────
 # 实测：本机 `tasklist` 可用，输出里进程名就是 `card-host.exe`（不带路径）。

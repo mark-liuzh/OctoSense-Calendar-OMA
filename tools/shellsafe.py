@@ -26,6 +26,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 
 # $VAR 后紧跟非 ASCII 字节。排除 ${...} 形式（那是安全的）。
 PAT = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]")
+# ${VAR:-$VAR} 自引用默认值展开：bash -n 认为合法，set -u 下执行即炸。
+PAT_SELF = re.compile(r"\$\{(\w+):-\$\1\}")
 
 
 def shell_files():
@@ -61,13 +63,19 @@ def main():
             if m:
                 bad.append("%s:%d  $变量 紧跟全角/非 ASCII → bash 会吞掉首字节\n%s"
                            % (rel, i, "      " + st[:100]))
+            m2 = PAT_SELF.search(code)
+            if m2:
+                bad.append("%s:%d  ${%s:-$%s} 自引用默认值 → set -u 下执行即炸\n%s"
+                           % (rel, i, m2.group(1), m2.group(1), "      " + st[:100]))
     if bad:
-        print("shellsafe 未通过 —— 发现 %d 处 bash multibyte 陷阱：" % len(bad))
+        print("shellsafe 未通过 —— 发现 %d 处 bash 陷阱：" % len(bad))
         for b in bad:
             print("  · %s" % b)
-        print("\n  修法：凡 $变量 后面紧跟中文/全角标点，一律写成 ${变量}。")
+        print("\n  修法：")
+        print("    · $变量 后面紧跟中文/全角标点 → 写成 ${变量}")
+        print("    · ${VAR:-$VAR} 自引用默认值 → 改成 ${VAR:-<真实默认值>}")
         return 1
-    print("shellsafe: 无 $变量 紧跟非 ASCII 的写法（扫描 %d 个 shell 脚本）" % len(files))
+    print("shellsafe: 无 bash 变量展开陷阱（扫描 %d 个 shell 脚本）" % len(files))
     return 0
 
 

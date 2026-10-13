@@ -79,15 +79,27 @@ n, _ = count([
 ])
 check("顺序颠倒的同款伪命中也不被扣除", n == "1", "实得 %r" % n)
 
-# 4. 真·良性降级仍然要扣除（否则 Linux 上硬指标永远为 1）
-n, _ = count(["[E] pulse_audio.rs:740: pa_context_connect failed"])
-check("PulseAudio 良性降级被扣除", n == "0", "实得 %r" % n)
+# 4. 真·良性降级仍然要扣除（否则 Linux 上硬指标永远为 1）。
+#    ★ v0.5.7 P1-2：夹具必须复刻真实日志格式（含路径前缀 + :列 - 消息前缀），
+#    否则正则放宽/收紧时夹具全绿而真机失效。
+PA_LINE = ("[E] platform/src/os/linux/pulse_audio.rs:749:17 - "
+           "PulseAudio: pa_context_connect failed (Connection refused), using ALSA only")
+# portability: fixture-path
+# [patch] 用绝对路径构建时 file!() 展开成绝对路径 —— 这是标准用法，必须覆盖。
+PA_LINE_ABS = ("[E] /build/octowork/makepad/platform/src/os/linux/pulse_audio.rs:749:17 - "
+               "PulseAudio: pa_context_connect failed (Connection refused), using ALSA only")
+
+n, _ = count([PA_LINE])
+check("PulseAudio 良性降级被扣除（相对路径格式）", n == "0", "实得 %r" % n)
+
+n, _ = count([PA_LINE_ABS])
+check("PulseAudio 良性降级被扣除（绝对路径格式）", n == "0", "实得 %r" % n)
 
 n, _ = count(["[E] ALSA fallback to dummy device"])
 check("ALSA fallback 被扣除", n == "0", "实得 %r" % n)
 
 # 5. 白名单命中时必须打一行 [W]，否则「0」不可追溯
-_, raw = count(["[E] pulse_audio.rs:740: pa_context_connect failed"])
+_, raw = count([PA_LINE])
 check("白名单命中时打印 [W] 白名单命中", "[W] 白名单命中" in raw,
       "实得 %r" % raw.strip()[:90])
 

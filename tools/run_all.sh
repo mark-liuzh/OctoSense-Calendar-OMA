@@ -67,7 +67,9 @@ fi
 # ★ run_features 排在 run_new 之后（2026-10-01）：它覆盖的是**非日程**的六个分区
 #   （待办/心情/目标/彩蛋/视图/吉祥物/胶囊），与前七条几乎不共享状态；
 #   放在最后，即便它整条挂了也不会污染前面的断言。
-STEPS="run_e2e run_conflict run_edge run_negative run_festival run_layout run_new run_features"
+# ★ run_new_features 排在最后（2026-10-13 P2-5）：它覆盖 v0.5.6 新功能
+#   （历史回滚 / 取消后自动释放），自建事件、自带重启验证，不与前八条共享状态。
+STEPS="run_e2e run_conflict run_edge run_negative run_festival run_layout run_new run_features run_new_features"
 
 FAILED=""
 FAILED_PREREQ=""     # exit=2：前置/夹具失败，**后续断言没跑完**，不代表应用坏

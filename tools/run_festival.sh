@@ -31,7 +31,7 @@ set -u
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="$ROOT/.runtime"
-EV="${EV:-$EV}"
+EV="${EV:-$OUT/evidence}"
 mkdir -p "$EV"
 rm -f "$EV"/*.png 2>/dev/null || true
 # shellcheck source=tools/_env.sh

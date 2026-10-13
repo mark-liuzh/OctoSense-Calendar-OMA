@@ -35,13 +35,6 @@ done
 # shellcheck source=tools/_env.sh
 . "$ROOT/tools/_env.sh"
 
-# 若 _env.sh 没探测到 card-host，补充本仓库实际布局（_toolchain/）。
-if [ -z "${HOST:-}" ]; then
-  for cand in "$ROOT/_toolchain/OctoSense-App-Hub/target/release/card-host" \
-              "$ROOT/_toolchain/OctoSense-App-Hub/target/release/card-host.exe"; do
-    [ -x "$cand" ] && HOST="$cand" && break
-  done
-fi
 if [ -z "${HOST:-}" ]; then
   echo "FATAL: 找不到 card-host。" >&2
   echo "       请设置 OCTO_CARD_HOST=/path/to/card-host 后重跑。" >&2

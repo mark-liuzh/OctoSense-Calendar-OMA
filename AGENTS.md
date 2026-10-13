@@ -41,7 +41,7 @@ Add this app's own requirements, data sources and tests below.
 界面严格照 `ui-design-v1.html` 复刻（设计语言：档案卷宗 —— 暖白纸底 `#faf9f7`、
 暖黑墨色 `#191714`、单一赤陶强调色 `#b4531f`）。改动界面前先读那份设计稿，不要自行发挥。
 
-### 权限：`storage` + `net`（仅 Open-Meteo 天气）+ `model`（v0.5.0 起）
+### 权限：`storage` + `net`（仅 Open-Meteo 天气）+ `model`（v0.5.0 起）+ `mail`（v0.5.3 起）
 
 `storage` 性质可写：事件库上限 16 MiB（宿主默认）。
 `net` 性质**仅限天气与城市坐标**：月历每个格子的左上角读 Open-Meteo 公开预报，
@@ -49,6 +49,11 @@ Add this app's own requirements, data sources and tests below.
 顶栏城市按钮把城市名换成经纬度（v0.5.1 起）。manifest 里
 `network.hosts` **列 2 个域**：`api.open-meteo.com`（天气）与
 `geocoding-api.open-meteo.com`（城市名 → 坐标），`archive-api` 实测零引用故未列入。
+`mail` 性质**只读邮件列表**：用于「从邮件读取会议邀请」。
+- 只调 `host.request("mail.list", {limit})`，limit 由用户设置（默认 20，范围 1..200）；
+- **不读邮件正文**，只用 `subject` 做正则匹配（会议/邀请/INVITATION/RESCHEDULED/MEETING）；
+- 数据不出本机：解析出的临时事件只进内存，不落盘、不参与 ICS 导出；
+- card-host 不注册 mail 服务时降级提示，不卡死。
 
 ⚠️⚠️ **不要删 `geocoding-api.open-meteo.com`**（2026-10-12 复核，v0.5.1 曾误删过一次）：
 

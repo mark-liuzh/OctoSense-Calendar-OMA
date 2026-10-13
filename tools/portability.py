@@ -36,6 +36,11 @@ PATTERNS = [
 # 刻意保留旧路径字面量，不该被自己抓到。
 ALLOW_SUBSTR = ("已移除", "原来", "写死", "曾", "v0.5.1", "作废", "各写了一遍")
 
+# 夹具/测试数据里的本机路径字面量是**刻意**的：它们必须长得像真实日志，
+# 否则门禁验的是失真样本（2026-10-13 实测：白名单在真机失效而夹具全绿）。
+# 行内带有此标记即豁免。
+FIXTURE_MARK = "# portability: fixture-path"
+
 
 def docstring_lines(path):
     """→ 该 Python 文件里属于字符串/文档字符串的行号集合。
@@ -101,7 +106,7 @@ def main():
             continue
         doc = docstring_lines(path) if path.endswith(".py") else set()
         for i, raw in enumerate(lines, 1):
-            if i in doc or any(k in raw for k in ALLOW_SUBSTR):
+            if i in doc or any(k in raw for k in ALLOW_SUBSTR) or FIXTURE_MARK in raw:
                 continue
             code = strip_comment(raw)
             if not code.strip():
