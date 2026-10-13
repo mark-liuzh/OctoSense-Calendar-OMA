@@ -719,6 +719,21 @@ fill = color.mix(color_focus, focus)
 
 ---
 
+## v0.5.8 更新日志（AI 排程 auto 缺口修复 + 商店文案口径对齐）
+
+本版修复代码评审发现的一个正确性缺口，并对齐商店 listing 与 README 的文案口径。功能面零新增、零 capability / network.hosts 变更。
+
+- **AI 排程 auto 重排缺口**：`apply_ai_schedule()` 新建事件分支此前只写 `dtstart` / `dtend`，未写 `start_minutes` / `end_minutes` 即调用 `mark_auto()`——与 v0.5.7 已修的 `todo_schedule()` 缺口同构。后果是「取消自动重排」时真实时长丢失、被兜底成 30 分钟。修复：新建分支显式写入分钟字段。
+- **listing 文案口径对齐**（`bundle/listing.json`）：
+  - 补入 v0.5.7 release notes 头条；
+  - 周报描述从「由 model.complete 生成文本」改为「纯本地文本拼装，不调用模型、不自动外发」（`generate_weekly_report()` 实为本地拼装，零模型调用）；
+  - v0.5.6「不做搜索/统计/报告」改为「不再扩展新的搜索/统计/报告功能，保留本地手动周报入口」（代码入口仍在）；
+  - 分区描述从「五个分区」改为「六个分区」，拆分「小知识 / 事件彩蛋」与「时间胶囊」，与本文档对齐。
+- **发布文档回填**：`docs/RELEASE-NOTES-v0.5.6.md` 回填实测值（commit `9506aba` / Release id `411252144` / zip sha256 / blake3 `1a61cbac…`）；`docs/RELEASE-NOTES-v0.5.5.md` 标注为预发布草稿（v0.5.5 未单独发布，功能并入 v0.5.6）。
+- **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
+
+---
+
 ## 参赛信息
 
 **2026 GOSIM Agentic App Hackathon · 赛道：应用**
@@ -728,7 +743,7 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.7`（**评审反馈修复 + 详情面板交互修复**：事件详情五个 tab 互斥切换、auto 事件重排正确性、P0–P3 修复、历史回滚/自动释放 e2e 固化；macOS 全量回归 9/9 PASS） |
+| 版本 | `0.5.8`（**AI 排程 auto 缺口修复 + 商店文案口径对齐**：AI 排程新建事件补分钟字段、listing 口径对齐、release notes 回填） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
 | 发布基准 | GitHub Release [`v0.5.7`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.7)（id 411899329；tag = `v0.5.7` = `e83d4a3`；2026-10-14）· digest `cb0bb395…` |
