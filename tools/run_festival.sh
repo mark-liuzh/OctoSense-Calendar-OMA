@@ -31,8 +31,9 @@ set -u
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="$ROOT/.runtime"
-mkdir -p "$OUT/evidence"
-rm -f "$OUT"/evidence/*.png 2>/dev/null || true
+EV="${EV:-$EV}"
+mkdir -p "$EV"
+rm -f "$EV"/*.png 2>/dev/null || true
 # shellcheck source=tools/_env.sh
 . "$ROOT/tools/_env.sh"
 
@@ -90,11 +91,11 @@ shot() {
   #   dotcolor 之后拿它当快照 ⇒ 所有像素判定变成「（无）」，
   #   而真正的错误信息被丢弃、只见一堆莫名其妙的红。
   #   失败就让它显形，并顺手清掉空文件，避免被误当成有效快照。
-  if ! "$PY" tools/e2e.py dumpsnap "$OUT/evidence/${1%.png}.snap.json"; then
+  if ! "$PY" tools/e2e.py dumpsnap "$EV/${1%.png}.snap.json"; then
     echo "  FAIL 导出同源快照失败（$1）" >&2
-    rm -f "$OUT/evidence/${1%.png}.snap.json"
+    rm -f "$EV/${1%.png}.snap.json"
   fi
-  $CURL "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM$RANDOM" -o "$OUT/evidence/$1" 2>/dev/null
+  $CURL "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM$RANDOM" -o "$EV/$1" 2>/dev/null
 }
 
 # 翻到指定月份，**并输出该月的 KEY=value**（供后续断言直接用）。
@@ -223,7 +224,7 @@ eqnum  "标记点个数（放假绿 + 节日上班深灰）" "5" "$(val DOTS "$F
 has    "月历标题为 2026 年 9 月" "2026 年 9 月" "$(val MONTH "$F")"
 shot "01-sep-cn.png"
 # 像素回读：行优先顺序 = 9/3 深灰 → 9/18 深灰 → 9/25,26,27 绿（按日历行从上到下）
-D=$(dots "$OUT/evidence/01-sep-cn.png")
+D=$(dots "$EV/01-sep-cn.png")
 eqkind "标记点像素判定（2 深灰 WORK + 3 绿 OK）" "WORK,WORK,OK,OK,OK" "$D"
 eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT"    "$D"
 
@@ -241,7 +242,7 @@ eqnum  "调休「班」字个数"    "1"             "$(val BAN "$F")"
 #   （10/22 长征 · CHINA_FIXED）= 8。原来写 7 只算了绿点。
 eqnum  "标记点个数（放假绿 + 节日上班深灰）" "8" "$(val DOTS "$F")"
 shot "02-oct-cn.png"
-D=$(dots "$OUT/evidence/02-oct-cn.png")
+D=$(dots "$EV/02-oct-cn.png")
 eqkind "标记点像素判定（7 绿 OK + 1 深灰 WORK）" "OK,OK,OK,OK,OK,OK,OK,WORK" "$D"
 eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT"                "$D"
 
@@ -264,7 +265,7 @@ eqnum  "只剩万圣节深灰点"    "1"             "$(val DOTS "$F")"
 shot "03-oct-intl.png"
 # 用户诉求里最关键的颜色区分：**国际节日照常上班 = 深灰小黑点**，
 # 必须和「放假绿点」区分开。切到「仅国际」后国内放假标记应全部消失。
-D=$(dots "$OUT/evidence/03-oct-intl.png")
+D=$(dots "$EV/03-oct-intl.png")
 eqkind "小黑点像素判定（深灰 WORK）" "WORK" "$D"
 eqban  "无「班」字"                  ""     "$D"
 
@@ -285,7 +286,7 @@ eqnum  "调休「班」字个数"    "1"             "$(val BAN "$F")"
 eqnum  "标记点个数（7 绿 + 2 深灰并集）" "9" "$(val DOTS "$F")"
 shot "04-oct-all.png"
 # 并集模式：7 个放假绿 + 长征深灰 + 万圣节深灰（行优先顺序：长征 10/22 在万圣节 10/31 之前）
-D=$(dots "$OUT/evidence/04-oct-all.png")
+D=$(dots "$EV/04-oct-all.png")
 eqkind "并集像素判定（7 绿 + 2 深灰）" "OK,OK,OK,OK,OK,OK,OK,WORK,WORK" "$D"
 eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT"                   "$D"
 
@@ -314,7 +315,7 @@ eqnum  "调休「班」字个数"      "1"               "$(val BAN "$F")"
 #   （10/22 长征 · CHINA_FIXED）= 9。原来写 8 只算了绿点。
 eqnum  "标记点个数（放假绿 + 节日上班深灰）" "9" "$(val DOTS "$F")"
 shot "05-oct2025-cn.png"
-D=$(dots "$OUT/evidence/05-oct2025-cn.png")
+D=$(dots "$EV/05-oct2025-cn.png")
 eqkind "标记点像素判定（8 绿 OK + 1 深灰 WORK）" "OK,OK,OK,OK,OK,OK,OK,OK,WORK" "$D"
 eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT"                   "$D"
 
@@ -337,7 +338,7 @@ eqnum  "调休「班」字个数"      "1"               "$(val BAN "$F")"
 eqnum  "标记点个数（0 绿 + 2 节日上班深灰）" "2" "$(val DOTS "$F")"
 shot "06-sep2025-cn.png"
 # 2025-09：没有放假 ⇒ 一个绿点都没有，但两个深灰点必须都在（行优先：9/3 → 9/18）
-D=$(dots "$OUT/evidence/06-sep2025-cn.png")
+D=$(dots "$EV/06-sep2025-cn.png")
 eqkind "无放假绿点、只有 2 个节日上班深灰点" "WORK,WORK" "$D"
 eqban  "「班」字像素判定（赤陶 EVENT）"  "EVENT" "$D"
 
@@ -360,7 +361,7 @@ fi
 
 echo
 echo "=== 证据文件 ==="
-ls -l "$OUT/evidence"/*.png 2>/dev/null
+ls -l "$EV"/*.png 2>/dev/null
 echo
 
 # ⚠️ 必须收工（2026-09-30 修）：本脚本此前漏了 kill_host，跑完把宿主留在后台。

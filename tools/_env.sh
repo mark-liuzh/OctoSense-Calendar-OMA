@@ -273,6 +273,26 @@ host_running() {
 #    所以这里：杀 → 轮询确认消失 → 不行就再来一轮，共 3 轮；仍失败则打印 PID 清单。
 kill_host() {
   local round i
+
+  # 优先杀掉本流程启动的特定 PID（并行跑法必需）。
+  # 若 HOST_PID 未设置（旧脚本或串行兜底），仍走全局清理。
+  if [ -n "${HOST_PID:-}" ]; then
+    for round in 1 2 3; do
+      kill -9 "$HOST_PID" >/dev/null 2>&1 || true
+      for i in $(seq 1 20); do
+        if ! kill -0 "$HOST_PID" 2>/dev/null; then
+          HOST_PID=""
+          return 0
+        fi
+        sleep 0.3
+      done
+    done
+    echo "WARN: card-host PID $HOST_PID 仍在运行（已重试 3 轮）。" >&2
+    HOST_PID=""
+    return 1
+  fi
+
+  # 兜底：全局清理所有 card-host（串行跑法可用，但不建议在并行时使用）。
   for round in 1 2 3; do
     if command -v taskkill >/dev/null 2>&1; then
       # //T 连子进程一起杀；没有子进程时也不报错
@@ -328,7 +348,13 @@ port_busy() {
 
 # ── 每次运行一个全新的私有存储目录 ────────────────────────────────────
 # 见 boot_host 里的说明：不依赖「能否删掉上一轮的目录」。
+# 并行跑法（run_all_parallel.sh）会为每个流程提前设置 APP_DATA，
+# 此时 boot_host 直接使用，不再生成新目录。
 APP_DATA=""
+
+# 当前启动的 card-host 进程 PID。并行跑法依赖它来做进程级清理，
+# 避免一条流程收工时杀掉其他流程的宿主。
+HOST_PID=""
 
 # ── 启动宿主并等它就绪 ────────────────────────────────────────────────
 # $1 = 日志文件路径
@@ -364,6 +390,10 @@ boot_host() {
   #      整条依赖就此消除。
   if [ -n "$reuse" ] && [ -d "$reuse" ]; then
     APP_DATA="$reuse"
+  elif [ -n "${APP_DATA:-}" ]; then
+    # 并行跑法已提前分配唯一目录，直接使用。
+    rm -rf "$APP_DATA" 2>/dev/null || true
+    mkdir -p "$APP_DATA" || true
   else
     local stamp
     stamp="$(date +%s)-$$"
@@ -399,6 +429,7 @@ boot_host() {
   #   892 是 bundle 的设计视口，给更高只是让它有余量，不会改变布局。
   MAKEPAD_REMOTE="$PORT" "$HOST" --bundle "$BUNDLE" --app-data "$APP_DATA" \
     --size "${WINDOW_SIZE:-412x1000}" --allow-unsigned --stamp > "$log" 2>&1 &
+  HOST_PID=$!
   local ready=0
   for _ in $(seq 1 20); do
     if $CURL --max-time 3 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; then ready=1; break; fi
