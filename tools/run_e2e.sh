@@ -6,8 +6,9 @@ set -u
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="$ROOT/.runtime"
-mkdir -p "$OUT/evidence"
-rm -f "$OUT"/evidence/* 2>/dev/null || true
+EV="${EV:-$OUT/evidence}"
+mkdir -p "$EV"
+rm -f "$EV"/* 2>/dev/null || true
 
 # shellcheck source=tools/_env.sh
 . "$ROOT/tools/_env.sh"
@@ -24,7 +25,7 @@ echo "宿主就绪"
 
 snap()  { $CURL "http://127.0.0.1:$PORT/snap" -o "$OUT/snap.json"; }
 tree()  { $CURL "http://127.0.0.1:$PORT/d"    -o "$OUT/tree.txt"; }
-shot()  { sleep 0.5; $CURL "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM$RANDOM" -o "$OUT/evidence/$1" 2>/dev/null; }
+shot()  { sleep 0.5; $CURL "http://127.0.0.1:$PORT/g?raw=1&t=$RANDOM$RANDOM" -o "$EV/$1" 2>/dev/null; }
 
 # ★ 2026-10-02（自承薄弱点 P2e）：给基本流程加正向文本断言。
 #   之前「通过」只意味着「跑完了、宿主日志里 0 个 [E]」；现在每步都校验
@@ -170,7 +171,7 @@ fi
 
 echo
 echo "=== 证据文件 ==="
-ls -la "$OUT/evidence/" 2>/dev/null
+ls -la "$EV/" 2>/dev/null
 
 echo
 echo "=== 断言汇总 ==="
