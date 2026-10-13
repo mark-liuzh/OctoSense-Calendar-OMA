@@ -249,7 +249,7 @@ host_error_count() {
 #   现在三条都以 `^\[E\]` 起手并紧跟宿主自己的源码位置标识，跨不到别的行去。
 #   （下方 selftest 里有一条构造用例专门钉住这个行为：含 "connection refused"
 #   字样的**非音频**错误必须**不再**被扣除。）
-HOST_ERROR_WHITELIST='^\[E\] pulse_audio\.rs:[0-9][0-9]*: pa_context_connect failed|^\[E\] pulseaudio[^\[]*Connection refused|^\[E\] ALSA fallback'
+HOST_ERROR_WHITELIST='^\[E\] ([^ ]*/)?pulse_audio\.rs:[0-9]+:[0-9]+ - PulseAudio: pa_context_connect failed|^\[E\] ([^ ]*/)?pulse_audio\.rs:[0-9]+:[0-9]+ - pulse_audio: pa_context_connect failed|^\[E\] ([^ ]*/)?pulseaudio[^\[]*Connection refused|^\[E\] ALSA fallback'
 
 # ── 宿主进程探测 ──────────────────────────────────────────────────────
 # 实测：本机 `tasklist` 可用，输出里进程名就是 `card-host.exe`（不带路径）。
