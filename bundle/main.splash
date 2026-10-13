@@ -9639,9 +9639,11 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card0 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t0 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t0 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p0 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d0 := Label{text: "" draw_text.color: c_ink3
@@ -9665,8 +9667,7 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
                         draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar0 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s00 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
@@ -9703,14 +9704,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card1 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t1 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t1 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p1 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d1 := Label{text: "" draw_text.color: c_ink3
                         draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    // ★ v0.5.5：为这个目标设期限
                     ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_set_due(1, 14)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -9727,9 +9731,8 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         on_click: || goal_del(1)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar1 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s10 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
@@ -9766,14 +9769,17 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
             goal_card2 := RoundedView{width: Fill height: Fit flow: Down spacing: 4
                 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}
                 draw_bg +: {color: c_accent_s border_radius: 8.0}
-                RoundedView{width: Fill height: Fit flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
-                    gc_t2 := Label{text: "" draw_text.color: c_ink
-                        draw_text.text_style: theme.font_bold{font_size: 13}}
+                // ★ v0.5.6：标题独占一行，操作按钮另起一行并右对齐，
+                //   彻底避免长标题把「删除」等按钮挤出视口。
+                gc_t2 := Label{width: Fill text: "" draw_text.color: c_ink
+                    draw_text.text_style: theme.font_bold{font_size: 13}}
+                RoundedView{width: Fill height: 32.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
                     gc_p2 := Label{text: "" draw_text.color: c_accent
                         draw_text.text_style: theme.font_code{font_size: 10}}
                     gc_d2 := Label{text: "" draw_text.color: c_ink3
                         draw_text.text_style: theme.font_regular{font_size: 10}}
                     Label{width: Fill text: "" draw_text.color: c_ink3}
+                    // ★ v0.5.5：为这个目标设期限
                     ButtonFlat{text: "设期限" height: 24.0 padding: Inset{left: 8 right: 8}
                         on_click: || goal_set_due(2, 14)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: c_paper color_down: c_paper
@@ -9790,9 +9796,8 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                         on_click: || goal_del(2)
                         draw_bg +: {border_radius: 6.0 color: c_card color_hover: #xfdecec color_down: #xfdecec
                             color_focus: c_card border_size: 1.0 border_color: c_line2 border_color_focus: c_line2}
-                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #xb91c1c color_focus: #xb91c1c
-                            text_style: theme.font_regular{font_size: 10}}}
-                }
+                        draw_text +: {color: #xb91c1c color_hover: #xb91c1c color_down: #b91c1c color_focus: #xb91c1c
+                            text_style: theme.font_regular{font_size: 10}}}}
                 gc_bar2 := Label{width: Fill text: "" draw_text.color: c_accent
                     draw_text.text_style: theme.font_code{font_size: 11}}
                 gc_s20 := RoundedView{width: Fill height: 26.0 flow: Right spacing: 6 draw_bg +: {color: c_accent_s}
