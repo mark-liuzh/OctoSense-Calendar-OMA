@@ -1491,7 +1491,7 @@ fn build_advice(conflicts, list) {
         let has_slot = slot != nil
         let s0 = -1
         let s1 = -1
-        let why = "当天 09:00-21:00 已无可放空档，建议改日或缩短时长"
+        let why = "当天 09:00 – 21:00 已无可放空档，建议改日或缩短时长"
         if all_day_block {
             why = "当天有全天日程占着整天，建议改到另一天"
         } else if has_slot {

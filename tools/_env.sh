@@ -237,6 +237,14 @@ host_error_count() {
     n=$(grep '\[E\]' "$1" 2>/dev/null | grep -vE "$HOST_ERROR_WHITELIST" | grep -c '' || true)
     n=${n:-0}
   fi
+  # ★ 2026-10-13（P3-4）：把 `[ui-hang]` 峰值纳入监控基线，但**非阻断**。
+  #   Linux/Xvfb/llvmpipe 软件渲染下出现 200–350 ms 的 ui-hang 是预期表现，
+  #   不是应用缺陷；这里只打印峰值供报告引用，不影响错误数判定。
+  local hang_max
+  hang_max=$(grep -oE '\[ui-hang\] [0-9]+ ms' "$1" 2>/dev/null | grep -oE '[0-9]+' | sort -n | tail -1 || true)
+  if [ -n "$hang_max" ]; then
+    echo "  [i] ui-hang 峰值: ${hang_max} ms（llvmpipe 软件渲染下预期 >200 ms，非应用缺陷）" >&2
+  fi
   printf '%s' "$n"
 }
 
