@@ -912,3 +912,33 @@ hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba
 → **PASSED**。
 
 完整对照与历史背景见 [`docs/RELEASE-NOTES-v0.4.1.md`](docs/RELEASE-NOTES-v0.4.1.md)「⚠️ 准入检查」一节。
+
+---
+
+## 发布信息（v0.5.6）
+
+当前权威发布件：
+
+| 字段 | 值 |
+| --- | --- |
+| Commit | `c2a85e56c761af395ea9bcd1ba2548d45d56e1bf` |
+| Tag | `v0.5.6` |
+| Bundle blake3 | `1a61cbac679815171c0f9e9a87da940b93d22365364c0aa3e32fc675671368e6` |
+| Publisher key id | `OMA` |
+| Release | [`v0.5.6`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.6)（id 411252144） |
+| Zip sha256 | `e19cad600d190ee4f9b95a5986d8d5081de7df6ccf47684538f1515d7dc19cf8` |
+| App Hub issue | [#221](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) |
+
+### 本版要点
+
+- 事件版本历史与回滚
+- 取消会议后自动释放时间块 / 自动事件重排
+
+### 验证状态
+
+- `hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380` → **PASSED**
+- Release zip 下载校验 sha256 与本地一致
+- Windows 全量回归 7/8 PASS，已知 `run_festival` 有 3 个 Windows 像素 flaky 失败；macOS 全量回归因 `card-host` 工具链编译问题未执行
+- ICS 往返保持 0/0/N
+
+完整发布说明见 [`docs/RELEASE-NOTES-v0.5.6.md`](docs/RELEASE-NOTES-v0.5.6.md)。
