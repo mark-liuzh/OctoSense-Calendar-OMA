@@ -530,6 +530,8 @@ let WX_LIVE_OLD = "wx_live2.json" // 旧格式（裸行数组，无时间戳）�
 let wx_live_rows = []            // 内存行数组（联网/缓存同一份）
 let wx_live_fetched = 0          // 上次成功取数的时间戳（秒，time_now 返的）
 let wx_live_tried = false        // 本会话是否已尝试过拉网（防重复拉，**不复用 fetched**）
+let wx_live_fail_count = 0       // ★ v0.5.7：连续联网失败次数，用于退避
+let wx_live_fail_at = 0          // ★ v0.5.7：最近一次失败时间戳（秒）
 
 // ★ v0.4.1：新鲜度与保留窗口（两个真实缺陷的补丁）
 //   TTL：预报是有保质期的 —— 三天前抓的「明天」不等于明天。
@@ -6938,6 +6940,13 @@ fn wx_live_one(i) {
 fn wx_live_fetch() {
     if wx_live_tried { return }
     wx_live_tried = true
+    // ★ v0.5.7 P0-1：连续失败退避。失败次数越多、冷却越长，
+    //   避免宿主机网络异常时反复发起请求触发 re-eval 风暴。
+    if wx_live_fail_count > 0 {
+        let cooldown = 60 * wx_live_fail_count    // 1 次 60s，2 次 120s，最多 300s
+        if cooldown > 300 { cooldown = 300 }
+        if (ipart(time_now()) - wx_live_fail_at) < cooldown { return }
+    }
     let rows = []
     for i in 0..7 {
         let r = wx_live_one(i)
@@ -6950,6 +6959,10 @@ fn wx_live_fetch() {
         wx_live_fetched = ipart(time_now())
         // v0.4.1：写「信封」格式（带 fetched_at），由 wx_live_save 顺带瘦身。
         wx_live_save()
+        wx_live_fail_count = 0
+    } else {
+        wx_live_fail_count = wx_live_fail_count + 1
+        wx_live_fail_at = ipart(time_now())
     }
     refresh_all()
 }
