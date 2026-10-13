@@ -2696,9 +2696,9 @@ fn sync_detail_panel() {
     ui.detail_follow_list.set_text(join_lines(n.followups))
     ui.detail_link_list.set_text(join_lines(n.links))
     ui.detail_history_list.set_text(detail_history_text())
-    // 标签页显隐
-    ui.detail_note_in.set_visible(detail_tab == 0)
-    ui.detail_minutes_in.set_visible(detail_tab == 1)
+    // 标签页显隐 —— 笔记/纪要切外壳（见 markup 处注释：TextInput.set_visible 是空操作）
+    ui.detail_note_page.set_visible(detail_tab == 0)
+    ui.detail_minutes_page.set_visible(detail_tab == 1)
     ui.detail_follow_page.set_visible(detail_tab == 2)
     ui.detail_link_page.set_visible(detail_tab == 3)
     ui.detail_history_page.set_visible(detail_tab == 4)
@@ -4830,7 +4830,14 @@ fn sync_panels() {
     //   不让位等于让面板叠在月历下面 —— 实测最坏组合月历底端已到 862px，
     //   再叠一个面板必然超出 892px 视口。让位后面板占的就是 import_panel 同一块空间，
     //   竖向几何与「导入」打开时完全一致。
-    let cal_on = tab == 0 && !about_open && !import_open && !wx_city_open
+    // ★ 2026-10-13（P1 修复）：详情 / AI 排程 / 周报三个面板**同样让位**。
+    //   它们与 import_panel 抢同一块竖向空间（见下方「三个面板抢同一块竖向空间」），
+    //   但此前 cal_on 没有排除它们 —— 日视图下头顶(192)+cal_box(455)+tools(62)
+    //   已占到 761px，详情面板(~190px) 只剩 88px 可见（窗口内容高 849），
+    //   tab 内容全部在屏幕外：点「笔记↔纪要」（都是 80px 输入框，面板高度不变）
+    //   看起来「没反应」，点「跟进/链接/历史」（Fit 内容较矮，高度变化）才有反应。
+    //   真人实测复现（2026-10-13）。让位后 192+62+190 ≈ 444px，远低于视口。
+    let cal_on = tab == 0 && !about_open && !import_open && !wx_city_open && !ai_sched_open && !detail_open && !report_open
     // 工具条（导入/导出/计数）是日程的数据出入口，只在日程分区出现。
     ui.tools.set_visible(tab == 0)
     ui.cal_box.set_visible(cal_on)
@@ -10361,15 +10368,24 @@ ScrollYView{width: Fill height: Fill flow: Down draw_bg +: {color: c_paper}
                     draw_text +: {color: c_ink2 color_hover: c_ink color_down: c_ink color_focus: c_ink2 color_disabled: c_ink3}}
             }
             // 笔记页
+            // ★ 2026-10-13（P1 修复）：TextInput 的 set_visible 是**空操作**
+            //   （makepad Widget::set_visible 默认实现 `{}`，text_input.rs 没有覆写；
+            //    只有 View 系组件真正响应）。直接对输入框 set_visible 会让
+            //   笔记/纪要两个页面永远同时占位 —— 点 tab「看起来没反应」。
+            //   改为包一层 RoundedView 外壳，显隐切外壳（View 系，有效）。
+            detail_note_page := RoundedView{width: Fill height: Fit flow: Down draw_bg +: {color: c_paper}
             detail_note_in := TextInput{width: Fill height: 80 empty_text: "议程、想法、背景…"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
                     border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            }
             // 纪要页（与笔记同位，靠显隐切换）
+            detail_minutes_page := RoundedView{width: Fill height: Fit flow: Down draw_bg +: {color: c_paper}
             detail_minutes_in := TextInput{width: Fill height: 80 empty_text: "会议纪要…"
                 draw_bg +: {color: c_card color_hover: c_card color_focus: c_card color_empty: c_card
                     border_radius: 8.0 border_size: 1.0 border_color: c_line2 border_color_empty: c_line2 border_color_focus: c_ink2}
                 draw_text +: {color: c_ink color_hover: c_ink color_focus: c_ink color_empty: c_ink3 color_empty_hover: c_ink3 color_empty_focus: c_ink3} draw_cursor +: {color: c_ink}}
+            }
             // 跟进页
             detail_follow_page := RoundedView{width: Fill height: Fit flow: Down spacing: 6 draw_bg +: {color: c_paper}
                 RoundedView{width: Fill height: 38.0 flow: Right spacing: 8 draw_bg +: {color: c_paper}
