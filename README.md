@@ -762,10 +762,10 @@ fill = color.mix(color_focus, focus)
 | 版本 | `0.5.9`（**双平台测试报告修复**：关于页版本号单源化 + 静态门禁、测试链路根治——「班」字快照文本断言 / 标记点集合匹配 / 分区点击判据重试 / mkdev_bundle） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
-| 发布基准 | GitHub Release [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `待回填`；tag = `v0.5.9`；2026-10-14）· digest `0106d913…` |
+| 发布基准 | GitHub Release [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `412322806`；tag = `v0.5.9` = `a9d8649a22ee`；2026-10-14）· digest `0106d913…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14） |
 | 验证 | 静态门禁 **14 项**全过（含新增 version_gate）· `run_festival` / `run_features` 定点复跑 PASS · 宿主 `[E]` **0** · 全量回归 9/9 批准后复跑 |
-| 提交 issue | [#待回填（v0.5.9）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/待回填) · [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 提交 issue | [#232（v0.5.9）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/232) · [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ 当前权威值 = v0.5.9（2026-10-14）
 
@@ -774,7 +774,7 @@ fill = color.mix(color_focus, focus)
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `待回填`（分支 `v0.5.9`，自 main `189860e` 开出） |
+| Commit | `a9d8649a22ee2ab7d58cce539c583087a850b848`（分支 `v0.5.9`，自 main `189860e` 开出，已合入 main） |
 | Tag | `v0.5.9` |
 | capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
@@ -782,10 +782,10 @@ fill = color.mix(color_focus, focus)
 | 往返无损 | 新增 0 / 改期 0 / 跳过 N（本版零功能改动，仍然成立） |
 | Bundle blake3 | `0106d913a6078da374df4920ad8b0c3876658c5c5ead68dfcc1cd8fdf0571adc` |
 | Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |
-| Release | [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `待回填`） |
+| Release | [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id 412322806） |
 | Zip | `octosense-calendar-0.5.9-bundle.zip` · 2,764,749 bytes |
 | Zip sha256 | `a3a8bef862a486c917851e81583f91067757174b45b13c1cb6fecea7dfe7f90b` |
-| 提交 issue | [#待回填](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/待回填) |
+| 提交 issue | [#232](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/232) |
 
 **`hub check` 已跑过**（2026-10-14）：
 

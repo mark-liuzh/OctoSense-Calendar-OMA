@@ -7,9 +7,9 @@
 
 | 项 | 值 |
 |---|---|
-| Commit | `待回填`（分支 `v0.5.9`，自 main `189860e` 开出） |
+| Commit | `a9d8649a22ee2ab7d58cce539c583087a850b848`（分支 `v0.5.9`，自 main `189860e` 开出，已合入 main） |
 | Tag | `v0.5.9` |
-| Release | id `待回填`（已发布，非 draft） |
+| Release | id `412322806`（已发布，非 draft） |
 | Zip | `octosense-calendar-0.5.9-bundle.zip` · 2,764,749 bytes · sha256 `a3a8bef862a486c917851e81583f91067757174b45b13c1cb6fecea7dfe7f90b` |
 | Bundle blake3 | `0106d913a6078da374df4920ad8b0c3876658c5c5ead68dfcc1cd8fdf0571adc` |
 | Publisher key id | `OMA` |
