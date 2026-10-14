@@ -56,40 +56,39 @@
 
 ---
 
-## 2. 演示视频配乐（Bensound「Sunny」）
+## 2. 演示视频配乐（Yiruma《River Flows In You》）
 
 [README](README.md#演示视频) 里的两个演示视频用了一段第三方背景音乐。它**不随应用分发**
-（不在 `bundle/` 里），但视频文件本身进了本仓库，因此按许可要求在此署名。
+（不在 `bundle/` 里），但视频文件本身进了本仓库，因此在此署名。
 
 | 项 | 内容 |
 | --- | --- |
-| 作品 | **Sunny** |
-| 作者 / 来源 | Bensound · <https://www.bensound.com> |
-| 许可 | Bensound Free License —— 免费使用**必须署名**，且不得再分发原始音频<br><https://www.bensound.com/licensing> |
+| 作品 | **River Flows In You** |
+| 作者 / 来源 | Yiruma（이루마）· 收录于专辑 *First Love*（2001） |
+| 权利状态 | 版权作品（非 royalty-free）。此处仅作本演示视频的铺底配乐，低音量、片段化使用，**不再分发原始音频** |
 | 使用位置 | `docs/media/octosense-demo-3min.mp4`、`docs/media/octosense-demo-1min30.mp4` 的背景音轨 |
-| 原始规格 | MP3 · 320 kb/s · 48 kHz · 立体声 · 2:20 |
+| 原始规格 | MP3 · 128 kb/s · 44.1 kHz · 立体声 · 0:30 |
 
 ### 本项目所做的改动
 
 | 改动 | 说明 |
 | --- | --- |
-| 裁剪与循环 | 按视频时长（3:27 / 1:39）裁剪并循环，**未修改旋律、未重新编曲** |
-| 音量 | 衰减为铺底（约 −9 dB 相对旁白），避开中文语音频段，不抢旁白 |
+| 裁剪与循环 | 按视频时长（3:27 / 1:39）循环铺满，**未修改旋律、未重新编曲** |
+| 音量 | 衰减为铺底（BG_VOL=0.35，约 −9 dB 相对旁白），避开中文语音频段，不抢旁白 |
 
-### 署名（按 Bensound 许可要求的格式）
+### 署名
 
-> Music by Bensound.com
-> https://www.bensound.com
+> BGM: Yiruma — River Flows In You
 
 同一署名也出现在 [README 的「演示视频」一节](README.md#演示视频)。
 
 ### 为什么原始音频没有进仓库
 
-Bensound 的免费许可允许在作品中使用，但**不允许再分发音频文件本身**。因此：
+该曲目为版权音乐，**不允许再分发音频文件本身**。因此：
 
-- 仓库里只有**已混音的成品视频**，没有单独的 `sunny-source.mp3`；
+- 仓库里只有**已混音的成品视频**，没有单独的源 mp3；
 - 录屏脚本 [`tools/record_demo.py`](tools/record_demo.py) 只在本地找到该文件时才用它作配乐，
-  找不到时**回退为程序合成的铺底音**（`aevalsrc`），因此 clone 本仓库不会得到 Bensound 的音频副本。
+  找不到时**回退为程序合成的铺底音**（`aevalsrc`），因此 clone 本仓库不会得到该曲目的音频副本。
 
 ---
 

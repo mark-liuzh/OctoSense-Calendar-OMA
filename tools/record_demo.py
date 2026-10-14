@@ -322,10 +322,10 @@ TTS_ANCHORS = {
 # 历史：0.55（合成 pad，太大）→ 0.22（用户"调小"，太小）→ 0.35（用户"大一点点"，铺底/对白比 1.0:0.35 ≈ -9 dB）
 BG_VOL = 0.35
 
-# 用户提供的源 BGM 路径（如 bensound-sunny.mp3）。
+# 用户提供的源 BGM 路径（如 river-flows-in-you.mp3）。
 # 如果文件存在，make_bgm 会自动用它代替 aevalsrc 合成。
-# 预期来源：Bensound「Sunny」（CC BY，需注明 Music by www.bensound.com）
-BENSOURCE_PATH = Path(__file__).parent.parent / ".runtime" / ".audio" / "sunny-source.mp3"
+# 当前来源：Yiruma《River Flows In You》（版权作品，仅作演示铺底，署名见 THIRD-PARTY.md）
+BENSOURCE_PATH = Path(__file__).parent.parent / ".runtime" / ".audio" / "bgm-source.mp3"
 
 
 def make_bgm(seconds: float, out_path: Path, seed: int = 42):
@@ -697,7 +697,7 @@ def mux_only(args):
 
 def verify_bgm(args):
     """验证源 mp3 → make_bgm 切片+降音量，跑 5 秒样本。
-    用法：放好 sunny-source.mp3 后跑 `python3 tools/record_demo.py --verify-bgm`。
+    用法：放好 bgm-source.mp3 后跑 `python3 tools/record_demo.py --verify-bgm`。
     输出 .runtime/.audio/bgm-verify.wav，秒级完成。
     """
     log("=== verify-bgm ===")
