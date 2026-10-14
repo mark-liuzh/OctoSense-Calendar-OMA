@@ -719,6 +719,21 @@ fill = color.mix(color_focus, focus)
 
 ---
 
+## v0.5.8 更新日志（AI 排程 auto 缺口修复 + 商店文案口径对齐）
+
+本版修复代码评审发现的一个正确性缺口，并对齐商店 listing 与 README 的文案口径。功能面零新增、零 capability / network.hosts 变更。
+
+- **AI 排程 auto 重排缺口**：`apply_ai_schedule()` 新建事件分支此前只写 `dtstart` / `dtend`，未写 `start_minutes` / `end_minutes` 即调用 `mark_auto()`——与 v0.5.7 已修的 `todo_schedule()` 缺口同构。后果是「取消自动重排」时真实时长丢失、被兜底成 30 分钟。修复：新建分支显式写入分钟字段。
+- **listing 文案口径对齐**（`bundle/listing.json`）：
+  - 补入 v0.5.7 release notes 头条；
+  - 周报描述从「由 model.complete 生成文本」改为「纯本地文本拼装，不调用模型、不自动外发」（`generate_weekly_report()` 实为本地拼装，零模型调用）；
+  - v0.5.6「不做搜索/统计/报告」改为「不再扩展新的搜索/统计/报告功能，保留本地手动周报入口」（代码入口仍在）；
+  - 分区描述从「五个分区」改为「六个分区」，拆分「小知识 / 事件彩蛋」与「时间胶囊」，与本文档对齐。
+- **发布文档回填**：`docs/RELEASE-NOTES-v0.5.6.md` 回填实测值（commit `9506aba` / Release id `411252144` / zip sha256 / blake3 `1a61cbac…`）；`docs/RELEASE-NOTES-v0.5.5.md` 标注为预发布草稿（v0.5.5 未单独发布，功能并入 v0.5.6）。
+- **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
+
+---
+
 ## v0.5.9 更新日志（双平台测试报告修复：版本号治理 + 测试链路根治）
 
 本版依据 v0.5.8 Linux + Windows 11 两份测试报告修复。两份报告均确认**应用本体零缺陷**（全部失败落在测试设施与平台层），本版把双报告问题收敛为三类处置。**应用本体零功能改动**，不新增 capability / network.hosts。
@@ -731,21 +746,7 @@ fill = color.mix(color_focus, focus)
   - T3（P1）featflow 分区点击加判据校验 + 重试，消化 Windows 平台合成点击概率丢失（run_features 20 项连坐失败的工具侧根治，不改应用）；
   - T4（P3）新增 `tools/mkdev_bundle.sh` 一键剥签名副本，`boot_host` 报错补 `OCTO_BUNDLE` 提示。
 - **Windows 天气 reserved-header（报告 P2）**：toolchain 源码已于 v0.5.7（2026-10-13）移除自定义 User-Agent，重编 card-host 后恢复；请测试机重编宿主后复测。
-- **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
-
----
-
-## v0.5.8 更新日志（AI 排程 auto 缺口修复 + 商店文案口径对齐）
-
-本版修复代码评审发现的一个正确性缺口，并对齐商店 listing 与 README 的文案口径。功能面零新增、零 capability / network.hosts 变更。
-
-- **AI 排程 auto 重排缺口**：`apply_ai_schedule()` 新建事件分支此前只写 `dtstart` / `dtend`，未写 `start_minutes` / `end_minutes` 即调用 `mark_auto()`——与 v0.5.7 已修的 `todo_schedule()` 缺口同构。后果是「取消自动重排」时真实时长丢失、被兜底成 30 分钟。修复：新建分支显式写入分钟字段。
-- **listing 文案口径对齐**（`bundle/listing.json`）：
-  - 补入 v0.5.7 release notes 头条；
-  - 周报描述从「由 model.complete 生成文本」改为「纯本地文本拼装，不调用模型、不自动外发」（`generate_weekly_report()` 实为本地拼装，零模型调用）；
-  - v0.5.6「不做搜索/统计/报告」改为「不再扩展新的搜索/统计/报告功能，保留本地手动周报入口」（代码入口仍在）；
-  - 分区描述从「五个分区」改为「六个分区」，拆分「小知识 / 事件彩蛋」与「时间胶囊」，与本文档对齐。
-- **发布文档回填**：`docs/RELEASE-NOTES-v0.5.6.md` 回填实测值（commit `9506aba` / Release id `411252144` / zip sha256 / blake3 `1a61cbac…`）；`docs/RELEASE-NOTES-v0.5.5.md` 标注为预发布草稿（v0.5.5 未单独发布，功能并入 v0.5.6）。
+- **验证**：静态门禁 14 道全过；**全量回归 9/9 PASS**（macOS 串行：run_e2e 10/10 · run_conflict 21/21 往返 0/0/N · 新功能 18/18；应用/前置失败均 0 条，宿主 `[E]` 0）。
 - **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
 
 ---
@@ -764,7 +765,7 @@ fill = color.mix(color_focus, focus)
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
 | 发布基准 | GitHub Release [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `412322806`；tag = `v0.5.9` = `a9d8649a22ee`；2026-10-14）· digest `0106d913…` |
 | 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14） |
-| 验证 | 静态门禁 **14 项**全过（含新增 version_gate）· `run_festival` / `run_features` 定点复跑 PASS · 宿主 `[E]` **0** · 全量回归 9/9 批准后复跑 |
+| 验证 | 静态门禁 **14 项**全过（含新增 version_gate）· 全量回归 **9/9 PASS**（`run_e2e` 10/10 · `run_conflict` 21/21 往返 0/0/N · 新功能 18/18）· 宿主 `[E]` **0**（2026-10-14） |
 | 提交 issue | [#232（v0.5.9）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/232) · [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
 ### ★ 当前权威值 = v0.5.9（2026-10-14）
@@ -778,7 +779,7 @@ fill = color.mix(color_focus, focus)
 | Tag | `v0.5.9` |
 | capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
-| 验证 | 静态门禁 **14 项**（含新增 version_gate）· `run_festival` / `run_features` 定点复跑 PASS · 宿主 `[E]` **0**（2026-10-14；全量回归 9/9 批准后复跑） |
+| 验证 | 静态门禁 **14 项**（含新增 version_gate）· 全量回归 **9/9 PASS**（2026-10-14 串行，应用/前置失败均 0 条）· 宿主 `[E]` **0** |
 | 往返无损 | 新增 0 / 改期 0 / 跳过 N（本版零功能改动，仍然成立） |
 | Bundle blake3 | `0106d913a6078da374df4920ad8b0c3876658c5c5ead68dfcc1cd8fdf0571adc` |
 | Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |

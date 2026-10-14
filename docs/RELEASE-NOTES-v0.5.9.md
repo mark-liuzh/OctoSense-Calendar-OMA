@@ -50,8 +50,8 @@ Windows 平台合成点击到达率 ~90-95%，单次丢失曾使 run_features 20
 
 - 静态门禁 **14 道**全过（含新增 version_gate；13 道既有门禁无回归）。
 - 定点复跑：`run_festival` PASS（新版「班」字/集合断言全过）、`run_features` PASS（featflow + restore + 布局扫描，宿主 `[E]` 0）。
+- **全量回归 9/9 PASS**（2026-10-14 macOS 串行，9m36s）：`run_e2e` 10/10 · `run_conflict` 21/21（ICS 往返 0/0/N）· `run_edge` / `run_negative` / `run_festival` / `run_layout` / `run_new` / `run_features` / `run_new_features` 18/18 —— 应用/断言失败 **0** 条，前置/夹具失败 **0** 条，全程宿主 `[E]` **0**。
 - `hub check` → **PASSED**（capabilities / hosts / storage 声明不变）。
-- **全量回归 9/9 待批准后复跑**（用户明确要求发布先行）。
 
 ## 四、不变式
 
