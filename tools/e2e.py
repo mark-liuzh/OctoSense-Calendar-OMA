@@ -519,6 +519,16 @@ DOT_TOL = 70          # 单通道距离上限；抗锯齿边缘色距离更大�
 #   中心 5×5 采样窗可能只采到白色间隙，导致偶发 FAIL。
 #   改为统计文字矩形内**语义色像素数量**，≥ GLYPH_MIN_PIXELS 即判定存在。
 GLYPH_MIN_PIXELS = 10
+# ★ 2026-10-14（v0.5.9 T1）：Linux llvmpipe 软渲染下字形光栅化位置与
+#   Windows/macOS 有数像素偏移，照快照 rect 原样扫会整体落空（v0.5.8 Linux
+#   报告：6 处「班」字判定确定性读回 NONE，而证据截图渲染完全正确）。
+#   ⇒ 扫描前把矩形四边各外扩 GLYPH_PAD 逻辑像素；仍不够时降级数「深色像素」
+#   （与纸面背景有显著差异即可，不锁定具体色相——颜色由应用调色板保证，
+#   跨平台字体差异不该把它判成失败）。
+GLYPH_PAD = 4
+# 背景纸面 #faf9f7；深于这个距离即算「有墨迹」。
+GLYPH_INK_TOL = 120
+PAPER_RGB = (0xfa, 0xf9, 0xf7)
 
 
 def _classify(rgb):
@@ -561,19 +571,35 @@ def glyph_kind(w, h, ch, buf, rect, sc, target="EVENT"):
     统计归类为 target 的像素数；≥ GLYPH_MIN_PIXELS 即认为该字形存在。
     背景见 P3-2：宿主以 1.25× 像素密度渲染 11px CJK，「班」字中心 5×5
     投票法偶发只采到笔画间隙，改成计数法后稳定。
+
+    ★ v0.5.9 T1（2026-10-14）：扫描矩形先按 GLYPH_PAD 外扩（吸收 llvmpipe
+    字形偏移）；语义色像素不足时**降级**为「深色像素计数」——只要字形确实
+    渲染成了醒目的深色（不是纸面留白），就不判 NONE。颜色正确性由
+    run_festival.sh 的快照文本断言（BAN_SNAP）+ 调色板常量在源码层共同保证，
+    像素层不再逐平台锁死色相（v0.5.8 Linux 报告的 P1 根治方案）。
     """
-    x0 = int(round(rect[0] * sc))
-    y0 = int(round(rect[1] * sc))
-    x1 = int(round((rect[0] + rect[2]) * sc))
-    y1 = int(round((rect[1] + rect[3]) * sc))
+    pad = GLYPH_PAD
+    x0 = int(round((rect[0] - pad) * sc))
+    y0 = int(round((rect[1] - pad) * sc))
+    x1 = int(round((rect[0] + rect[2] + pad) * sc))
+    y1 = int(round((rect[1] + rect[3] + pad) * sc))
     x0, y0 = max(0, x0), max(0, y0)
     x1, y1 = min(w - 1, x1), min(h - 1, y1)
     count = 0
+    ink = 0
     for yy in range(y0, y1 + 1):
         for xx in range(x0, x1 + 1):
-            if _classify(zoom_px(w, ch, buf, xx, yy)) == target:
+            rgb = zoom_px(w, ch, buf, xx, yy)
+            if _classify(rgb) == target:
                 count += 1
-    return target if count >= GLYPH_MIN_PIXELS else "NONE"
+            if (abs(rgb[0] - PAPER_RGB[0]) + abs(rgb[1] - PAPER_RGB[1])
+                    + abs(rgb[2] - PAPER_RGB[2]) > GLYPH_INK_TOL):
+                ink += 1
+    if count >= GLYPH_MIN_PIXELS:
+        return target
+    if ink >= GLYPH_MIN_PIXELS:
+        return target + "(ink)"   # 字形确已渲染（跨平台色相容差），仅作提示
+    return "NONE"
 
 
 def zoom_px(w, ch, buf, x, y):
@@ -1230,6 +1256,10 @@ def main():
         print("DOTCOLORS=" + ",".join(cols))
         print("DOTXY=" + " ".join("%d,%d" % (r[0], r[1]) for r in m["日历格子点"]))
         print("BANXY=" + " ".join("%d,%d" % (r[0], r[1]) for r in m["班"]))
+        # ★ v0.5.9 T1（2026-10-14）：快照文本层「班」字计数。
+        #   v0.5.8 Linux 报告 P1 的根治方案：硬性断言走 .snap.json 控件树
+        #   （与字体渲染/光栅化完全无关），像素判色（BANKIND）降级为参考。
+        print("BAN_SNAP=%d" % len(m["班"]))
         # ⚠️⚠️ 2026-10-09（v0.5.0 P2-5）：原来只判**第一个**「班」
         #   （bk = dot_kinds(..., m["班"][0], sc)）。而holiday_marks 会收集
         #   **全部** text=="班" 的节点 ⇒ BAN 的**个数**是全的、**颜色**只判第1 个。

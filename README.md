@@ -719,6 +719,22 @@ fill = color.mix(color_focus, focus)
 
 ---
 
+## v0.5.9 更新日志（双平台测试报告修复：版本号治理 + 测试链路根治）
+
+本版依据 v0.5.8 Linux + Windows 11 两份测试报告修复。两份报告均确认**应用本体零缺陷**（全部失败落在测试设施与平台层），本版把双报告问题收敛为三类处置。**应用本体零功能改动**，不新增 capability / network.hosts。
+
+- **关于页版本号漂移修复（Windows 报告 P1）**：写死的 0.5.4 与 manifest 0.5.8 不一致。现以 manifest.json 为唯一版本源，关于页改 0.5.9，并新增 `tools/version_gate.py` 静态门禁（13 → 14 道），漂移即红。
+- **geocoding 域明确不删（驳回 Windows 报告 P3）**：该域经宿主内建 `sys.geocodenum` 调用、仅点城市按钮时触发，应用源码 grep 不到属预期（v0.5.1 误删教训）；listing.json 描述已补触发路径说明。
+- **测试链路根治**：
+  - T1（P1）run_festival「班」字硬性断言改读 `.snap.json` 快照文本（新增 `BAN_SNAP`），像素判色降级为 WARN——根治 Linux llvmpipe 下确定性失败（v0.5.8 Linux 报告 8/9 的唯一 FAIL）；
+  - T2（P2）标记点断言从序列精确匹配放宽为集合匹配（颜色种类 + 个数），消除翻页竞态偶发红；
+  - T3（P1）featflow 分区点击加判据校验 + 重试，消化 Windows 平台合成点击概率丢失（run_features 20 项连坐失败的工具侧根治，不改应用）；
+  - T4（P3）新增 `tools/mkdev_bundle.sh` 一键剥签名副本，`boot_host` 报错补 `OCTO_BUNDLE` 提示。
+- **Windows 天气 reserved-header（报告 P2）**：toolchain 源码已于 v0.5.7（2026-10-13）移除自定义 User-Agent，重编 card-host 后恢复；请测试机重编宿主后复测。
+- **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
+
+---
+
 ## v0.5.8 更新日志（AI 排程 auto 缺口修复 + 商店文案口径对齐）
 
 本版修复代码评审发现的一个正确性缺口，并对齐商店 listing 与 README 的文案口径。功能面零新增、零 capability / network.hosts 变更。
@@ -743,38 +759,38 @@ fill = color.mix(color_focus, focus)
 | 队伍 | **OMA** |
 | 成员 | `mark-liuzh`、`ody-cai` |
 | 应用 ID | `com.oma.octosense.calendar` |
-| 版本 | `0.5.8`（**AI 排程 auto 缺口修复 + 商店文案口径对齐**：AI 排程新建事件补分钟字段、listing 口径对齐、release notes 回填） |
+| 版本 | `0.5.9`（**双平台测试报告修复**：关于页版本号单源化 + 静态门禁、测试链路根治——「班」字快照文本断言 / 标记点集合匹配 / 分区点击判据重试 / mkdev_bundle） |
 | 形态 | OctoSense 脚本应用（Splash），单 `main.splash` + 静态素材 |
 | 能力 | `storage` + `net`（2 个 host：`api.open-meteo.com`、`geocoding-api.open-meteo.com`）+ `model` + `mail`（**不含** `location`） |
-| 发布基准 | GitHub Release [`v0.5.8`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.8)（id 412195625；tag = `v0.5.8` = `a544150b`；2026-10-14）· digest `9a1f6a41…` |
-| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14；下载件同样 PASSED 且 sha256 逐字节一致） |
-| 验证 | 静态门禁 **13 项**全过 · `run_e2e` **10/10** · `run_conflict` **21/21**（往返 **0/0/N**）· 全量回归 **9/9**（含新功能 18/18）· 宿主 `[E]` **0** |
-| 提交 issue | [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
+| 发布基准 | GitHub Release [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `待回填`；tag = `v0.5.9`；2026-10-14）· digest `0106d913…` |
+| 准入检查 | **PASSED** —— `hub check bundle --publisher-key OMA=46b11cc1…` → **PASSED**，无警告（2026-10-14） |
+| 验证 | 静态门禁 **14 项**全过（含新增 version_gate）· `run_festival` / `run_features` 定点复跑 PASS · 宿主 `[E]` **0** · 全量回归 9/9 批准后复跑 |
+| 提交 issue | [#待回填（v0.5.9）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/待回填) · [#229（v0.5.8）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) · [#223（v0.5.7）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/223) · [#221（v0.5.6）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/221) · [#217（v0.5.4）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/217) · [#216（v0.5.3）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/216) · [#212（v0.5.2）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/212) · [#200（v0.5.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/200) · [#198（v0.5.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/198) · [#77（v0.4.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/77) · [#60（v0.3.1）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/60) · [#52（v0.3.0）](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/52) |
 
-### ★ 当前权威值 = v0.5.8（2026-10-14）
+### ★ 当前权威值 = v0.5.9（2026-10-14）
 
 > 本README 里**只有这一节**是当前权威值。其余「历史记录」节的 digest / signature 均已作废，
 > 只为追溯留档，不可作为发布基准。
 
 | 字段 | 值 |
 | --- | --- |
-| Commit | `a544150b`（分支 `v0.5.8`，自 main 开出） |
-| Tag | `v0.5.8` |
+| Commit | `待回填`（分支 `v0.5.9`，自 main `189860e` 开出） |
+| Tag | `v0.5.9` |
 | capabilities | `["storage", "net", "model", "mail"]`（**不含** `location`） |
 | network.hosts | `["api.open-meteo.com", "geocoding-api.open-meteo.com"]` |
-| 验证 | 静态门禁 **13 项** · `run_e2e` 10/10 · `run_conflict` 21/21（往返 0/0/N）· `run_new_features` 18/18 · 宿主 `[E]` **0**（2026-10-14） |
-| 往返无损 | 新增 0 / 改期 0 / 跳过 N（AI 排程补分钟字段之后**仍然成立**） |
-| Bundle blake3 | `9a1f6a4162493a28f9b8659369ce61c7a679debbeb06c15c97ab672fd72069f5` |
+| 验证 | 静态门禁 **14 项**（含新增 version_gate）· `run_festival` / `run_features` 定点复跑 PASS · 宿主 `[E]` **0**（2026-10-14；全量回归 9/9 批准后复跑） |
+| 往返无损 | 新增 0 / 改期 0 / 跳过 N（本版零功能改动，仍然成立） |
+| Bundle blake3 | `0106d913a6078da374df4920ad8b0c3876658c5c5ead68dfcc1cd8fdf0571adc` |
 | Publisher key id | `OMA`（沿用 v0.4.1 起同一把，保持更新链连续） |
-| Release | [`v0.5.8`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.8)（id 412195625） |
-| Zip | `octosense-calendar-0.5.8-bundle.zip` · 2,765,551 bytes |
-| Zip sha256 | `6496c3d2bab8a6748d3f0a1cbe53f2c5e354a233bd8e0f77d64e657e606bfa4b` |
-| 提交 issue | [#229](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229) |
+| Release | [`v0.5.9`](https://github.com/mark-liuzh/OctoSense-Calendar-OMA/releases/tag/v0.5.9)（id `待回填`） |
+| Zip | `octosense-calendar-0.5.9-bundle.zip` · 2,764,749 bytes |
+| Zip sha256 | `a3a8bef862a486c917851e81583f91067757174b45b13c1cb6fecea7dfe7f90b` |
+| 提交 issue | [#待回填](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/待回填) |
 
 **`hub check` 已跑过**（2026-10-14）：
 
 ```
-com.oma.octosense.calendar 0.5.8 — PASSED
+com.oma.octosense.calendar 0.5.9 — PASSED
   declarations: capabilities {"mail", "model", "net", "storage"},
           hosts {"api.open-meteo.com", "geocoding-api.open-meteo.com"},
           storage 16777216 bytes, agent none
@@ -786,17 +802,21 @@ com.oma.octosense.calendar 0.5.8 — PASSED
 hub check bundle --publisher-key OMA=46b11cc186e7a8ea8688c9d5a246caeaa27e6e0c8ba2986547d7511c0b872380
 ```
 
-**下载件复核（2026-10-14）**：GitHub 资产 digest `sha256:6496c3d2…` 与本地 zip 逐字节一致，
-size 2,765,551 bytes 相符。
+**本版要点**（详见上方「v0.5.9 更新日志」节）：
 
-**本版要点**（详见上方「v0.5.8 更新日志」节）：
-
-- **AI 排程 auto 缺口修复**：新建事件显式写入 `start_minutes` / `end_minutes`，auto 重排不再丢失真实时长。
-- **商店文案口径对齐**：listing release notes 补 v0.5.7 头条、周报改纯本地拼装、分区数 5→6 对齐 README。
-- **发布文档回填**：v0.5.6 release notes 实测值回填；v0.5.5 标注预发布草稿。
+- **版本号治理**：关于页与 manifest 对齐（0.5.9），新增 version_gate 静态门禁（13 → 14 道），漂移即红。
+- **测试链路根治**：「班」字断言改快照文本（Linux llvmpipe 确定性失败根治）、标记点集合匹配、分区点击判据重试、mkdev_bundle 一键剥签名。
+- **geocoding 域明确不删**（驳回 v0.5.8 Windows 报告 P3，v0.5.1 误删教训）；Windows 天气 reserved-header 随 toolchain v0.5.7 修复，重编宿主后复测。
 - **不变式**：`reschedule()` 唯一写入点、七道闸判定、ICS 往返 0/0/N 全部保持。
 
-详见 [`docs/RELEASE-NOTES-v0.5.7.md`](docs/RELEASE-NOTES-v0.5.7.md)（v0.5.7 发布说明）· 本节上方「v0.5.8 更新日志」。
+详见 [`docs/RELEASE-NOTES-v0.5.9.md`](docs/RELEASE-NOTES-v0.5.9.md)（v0.5.9 发布说明）· 本节上方「v0.5.9 更新日志」。
+
+### v0.5.8（历史记录，**已作废**）
+
+v0.5.8（commit `a544150b`，App Hub [#229](https://github.com/OctoSense-org/OctoSense-App-Hub/issues/229)）：
+AI 排程 auto 缺口修复 + 商店文案口径对齐。digest `9a1f6a41…`、Release id `412195625`、
+zip `octosense-calendar-0.5.8-bundle.zip` 均已作废，只为追溯留档。
+详见 [`docs/RELEASE-NOTES-v0.5.7.md`](docs/RELEASE-NOTES-v0.5.7.md) · 本节上方「v0.5.8 更新日志」。
 
 ### v0.5.7（历史记录，**已作废**）
 

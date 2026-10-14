@@ -42,7 +42,7 @@ echo "=================================================================="
 echo
 echo "######## 阶段 1/2 · 静态自检 ########"
 static_gate
-for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls; do
+for t in brace quotes toplevel deps paintfix btnfocus cellhover fncalls version_gate; do
   printf '  %-10s ' "$t"
   if out=$("$PY" "$ROOT/tools/$t.py" "$ROOT/${BUNDLE:-bundle}/main.splash" 2>&1); then
     echo "PASS"

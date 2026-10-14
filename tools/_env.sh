@@ -166,9 +166,17 @@ static_gate() {
     printf '%s\n' "$out" | tail -20 >&2
     rc=1
   fi
+  # ★ 2026-10-14（v0.5.9 A1）：版本号一致性门禁。
+  #   v0.5.8 关于页写死 0.5.4 而 manifest 已 0.5.8（Windows 报告 P1），
+  #   发版以 manifest.version 为唯一源，漂移即红。
+  if ! out=$("$PY" "$ROOT/tools/version_gate.py" "$f" 2>&1); then
+    echo "FATAL: 版本号一致性门禁 tools/version_gate.py 未通过：" >&2
+    printf '%s\n' "$out" | tail -20 >&2
+    rc=1
+  fi
   # ⚠️ 退出码 2 = 前置/夹具失败（不是应用断言失败），run_all.sh 据此分两类汇总。
   [ "$rc" = "0" ] || exit 2
-  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates / host_errors / portability / shellsafe / writepoint 全过（13 道）"
+  echo "静态门禁: brace / quotes / toplevel / deps / paintfix / btnfocus / cellhover / fncalls / ai_gates / host_errors / portability / shellsafe / writepoint / version_gate 全过（14 道）"
 }
 
 # ── 前置检查：应用存储必须是干净的 ────────────────────────────────────
@@ -383,6 +391,7 @@ boot_host() {
     echo "FATAL: 找不到 card-host。" >&2
     echo "       先构建：cd OctoSense-App-Hub && cargo build --release -p octosense-card-host -p octosense-app-hub" >&2
     echo "       或指定：OCTO_CARD_HOST=/path/to/card-host bash tools/run_e2e.sh" >&2
+    echo "       签名 bundle 会被宿主拒绝：先 bash tools/mkdev_bundle.sh，再用 OCTO_BUNDLE=.runtime/bundle-dev 跑" >&2
     exit 2   # 前置/环境类失败，不是应用断言失败（见 assert_clean 的说明）
   fi
 

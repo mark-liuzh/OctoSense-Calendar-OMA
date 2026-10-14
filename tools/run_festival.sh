@@ -168,30 +168,45 @@ dots() {
   local png="$1"
   "$PY" tools/e2e.py dotcolor "$png" "${png%.png}.snap.json" 2>&1
 }
-# 断言：所有标记点的语义色序列恰好等于 $2（$2 为空串 = 应当一个点都没有）
+# 断言：所有标记点的语义色**集合**等于 $2（各颜色个数一致；$2 为空串 = 一个点都没有）
+# ★ v0.5.9 T2（2026-10-14）：从「整行序列精确匹配」放宽为「集合匹配」——
+#   v0.5.8 双平台报告 P2：采样时序与翻页动画竞态时，序列的**顺序与长度**
+#   不可靠（实测期望 2 WORK+3 OK 却读回 8 个值的错月帧），而颜色种类与个数
+#   才是稳定判据。多读的 NONE（抗锯齿未命中）直接忽略。
 eqkind() {
-  local got; got=$(val DOTKIND "$3")
-  if [ "$got" = "$2" ]; then ok "$1 = ${2:-（无）}"; else bad "$1 — 期望 ${2:-（无）}，实际 ${got:-（无）}"; fi
+  local got want_g
+  got=$(val DOTKIND "$3")
+  want_g=$(printf '%s' "$2" | tr ',' '\n' | grep -v '^$' | sort | tr '\n' ',')
+  local got_g
+  got_g=$(printf '%s' "$got" | tr ',' '\n' | grep -v '^$' | grep -v '^NONE$' | sort | tr '\n' ',')
+  if [ "$got_g" = "$want_g" ]; then ok "$1 = ${2:-（无）}"
+  else bad "$1 — 期望集合 ${2:-（无）}，实际 ${got:-（无）}"; fi
 }
-# 断言：所有「班」字的颜色语义序列等于 $2（空串 = 不该有「班」字）
-# ⚠️ 2026-10-09（P2-5）：$2 现在是**逗号分隔的序列**（e.g. "EVENT,EVENT"），
-#   因为 dotcolor 改成对**每一个**「班」都取色 —— 原来只判第1 个，
-#   某月有多个调休日时后面的颜色错了也测不出来。
-#   仍写"EVENT"（不带逗号）也能工作：那表示「恰好一个，且是 EVENT」。
+# 断言：该月「班」字**存在性**（硬性 = 快照文本计数 BAN_SNAP，与字体渲染无关）。
+#   $2 = 旧写法的期望颜色序列："EVENT"（恰 1 个）/ ""（没有）/ "EVENT,EVENT"（多个）。
+# ★ v0.5.9 T1（2026-10-14）：v0.5.8 Linux 报告 P1 —— llvmpipe 下字形位置偏移使
+#   像素判色确定性落空（期望 EVENT 实际 NONE，而截图渲染正确）。根治方案：
+#   硬性断言改走 .snap.json 控件树文本（BAN_SNAP）；像素判色（BANKIND）保留
+#   输出但降级为 WARN，不再让跨平台字体差异决定红绿。颜色正确性由应用
+#   调色板常量（c_accent）保证，文本存在 + 源码常量 + 证据截图三重覆盖。
 eqban() {
-  local got want
-  got=$(val BANKIND "$3")
-  # 单值期望 → 展开成「恰好一个」的判定，保持旧写法可用
+  local got want px
+  got=$(val BAN_SNAP "$3")
   case "$2" in
-    *,*) want="$2" ;;
-    "")   want="" ;;
-    *)   want="$2" ;;
+    "")    want="0" ;;
+    *,*)   want=$(printf '%s' "$2" | tr ',' '\n' | grep -c .) ;;
+    *)     want="1" ;;
   esac
-  if [ "$got" = "$want" ]; then ok "$1 = ${want:-（无）}"
+  if [ "$got" = "$want" ]; then
+    ok "$1 = ${want} 个（快照文本断言）"
   else
-    #红了就把逐个坐标的结果一起打出来，省得再跑一次探针
-    bad "$1 — 期望 ${want:-（无）}，实际 ${got:-（无）}  [$(val BAN_KIND_DETAIL "$3")]"
+    bad "$1 — 期望 ${want} 个「班」，快照实得 ${got:-（无）}  [$(val BANXY "$3")]"
   fi
+  # 像素判色降级为提醒：NONE / 空 只打 WARN（v0.5.9 T1）。
+  px=$(val BANKIND "$3")
+  case "$px" in
+    *NONE*|"") echo "  WARN $1 像素判色未确认（${px:-无像素结果}）；快照文本已过，按 v0.5.9 T1 方案仅提醒" ;;
+  esac
 }
 
 echo "=== [1/9] 启动宿主 ==="

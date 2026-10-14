@@ -99,14 +99,27 @@ def click_id(i, wait=0.7):
     return True
 
 
-def click_label(label, wait=0.7):
-    s = e2e.snap()
-    n = e2e.btn(s, label)
-    if not n:
-        return False
-    e2e.click(*e2e.center(n))
-    time.sleep(wait)
-    return True
+def click_label(label, wait=0.7, verify=None, tries=3):
+    """按文案点按钮，带**判据校验 + 重试**（v0.5.9 T3）。
+
+    ⚠️ 背景（v0.5.8 Windows 报告 P1）：平台合成点击到达率仅 ~90-95%
+    （详情页 tab 场景自述 ~6%），单次点击丢失会让后续断言在错误界面上
+    连坐失败（run_features B 段 20 项即由此产生）。verify_tab1_retry.sh 的
+    决定性实验（带重试 10/10 通过）证明功能无 bug、真凶是点击丢失。
+    ⇒ 与 e2e.py open 的「面板接管视口」判据同款思路：点完用 verify 校验
+    真的切过去了，没生效就重找按钮重试（最多 tries 次）。
+    verify: 对新快照求值的谓词；None = 不校验（保持旧行为）。
+    """
+    for _ in range(tries):
+        s = e2e.snap()
+        n = e2e.btn(s, label)
+        if not n:
+            return False
+        e2e.click(*e2e.center(n))
+        time.sleep(wait)
+        if verify is None or verify(e2e.snap()):
+            return True
+    return False
 
 
 def type_into(i, text, wait=0.6, tries=4):
@@ -146,9 +159,20 @@ def cells(s=None):
     return out
 
 
+# 每个分区导航点击的「生效判据」（v0.5.9 T3）：该分区标志性控件出现。
+# 分区面板互斥，上一分区的控件不会与下一分区的共存 —— 判据失效 = 点击被吞。
+_TAB_VERIFY = {
+    "日程": lambda s: e2e.find_id(s, "month_title") is not None,
+    "待办": lambda s: e2e.find_id(s, "todo_stat") is not None,
+    "心情": lambda s: e2e.find_id(s, "mood_sum") is not None,
+    "目标": lambda s: e2e.find_id(s, "goal_count") is not None,
+    "时光": lambda s: e2e.find_id(s, "egg_date_l") is not None,
+}
+
+
 def tab(label):
-    """点分区导航（按钮文案就是分区名）。"""
-    return click_label(label, 0.8)
+    """点分区导航（按钮文案就是分区名），带判据校验 + 重试（v0.5.9 T3）。"""
+    return click_label(label, 0.8, verify=_TAB_VERIFY.get(label))
 
 
 # ── 从源码里读回数据表（用于 E 段交叉校验）────────────────────────────
