@@ -521,7 +521,7 @@ macOS / Windows 上没有 provider。因此在桌面端申请 `location` 权限
 
 | 版本 | 时长 | 用途 | 文件 | BiliBili视频链接 |
 | --- | --- | --- | --- | --- |
-| 完整版 | 3 分 27 秒 | 答辩 / 完整流程：导入 → 冲突 → 改期建议 → 回滚 → 无损导出 | [`octosense-demo-3min.mp4`](docs/media/octosense-demo-3min.mp4) · 7.14 MiB | https://b23.tv/4cjEEZj |
+| 完整版 | 3 分 27 秒 | 答辩 / 完整流程：导入 → 冲突 → 改期建议 → 回滚 → 无损导出 | [`octosense-demo-3min.mp4`](docs/media/octosense-demo-3min.mp4) · 7.14 MiB | https://b23.tv/J2TaS04 |
 | 精简版 | 1 分 39 秒 | 快速了解 / 商店页 | [`octosense-demo-1min30.mp4`](docs/media/octosense-demo-1min30.mp4) · 3.66 MiB | https://b23.tv/oRMzDi5 |
 
 规格：824 × 1842（竖屏，跟随宿主窗口比例）· H.264 High + AAC · 24 fps · 带旁白音轨。
