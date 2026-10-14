@@ -526,8 +526,8 @@ macOS / Windows 上没有 provider。因此在桌面端申请 `location` 权限
 
 规格：824 × 1842（竖屏，跟随宿主窗口比例）· H.264 High + AAC · 24 fps · 带旁白音轨。
 
-> **素材署名**：背景音乐为 **Bensound「Sunny」**（Royalty Free Music from Bensound ·
-> <https://www.bensound.com>），按许可要求署名；中文旁白由 macOS `say -v Tingting` 现场合成。
+> **素材署名**：背景音乐为 Yiruma**《River Flows In You》**（版权作品，仅作本演示视频的铺底配乐、
+> 不作再分发）；中文旁白由 macOS `say -v Tingting` 现场合成。
 > 完整第三方清单见 [THIRD-PARTY.md](THIRD-PARTY.md)。
 
 > 点封面或文件名即可在 GitHub 上打开该文件（文件页右上角是 **Download raw file**；
