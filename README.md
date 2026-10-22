@@ -686,6 +686,68 @@ fill = color.mix(color_focus, focus)
 
 ---
 
+## v0.5.21 更新日志（官方宿主实机验证与修复全链）
+
+本版主题只有一句话：**把「本地回归全绿」升级成「官方宿主可用」**。
+v0.5.9 在 GOSIM 复赛按 `a9d8649` 评审后，我们在官方 **OctoSense 0.1.0-rc.6** 桌面宿主（真实
+20M 指令预算 / 真实 `model.complete` / 真实 `mail.*` 服务）上完整跑通了应用，并把沿途发现的
+**9 类问题全部修掉**。这些缺陷在本地 `card-host` 上**全部不可见**（card-host 无指令上限、
+无 model、无 mail 服务）——这正是复赛评审扣分的三个点（指令预算 / model schema / mail 契约）的
+同一根源。
+
+**修复清单（按发现顺序，全部 rc.6 实测复现并回验）**：
+
+1. **指令预算超限（评审点①）**：月历刷新 / 导入后 refresh 在 20M 池上超限，事件回调静默中断。
+   根因经「查表短路探针」实证为 `cal_cells()` 首帧 `ensure_month_cache()` 的按日×按表双重查表。
+   根治方案两层：① `month_cache_stub()`——eval 期先填 42 格空缓存，首帧只画占位，
+   真正的构建收口到 `refresh_all()`（独立 handler、独占一池）；② `month_cache_build()` 索引化——
+   放假/调休、节日名（含 `festival_mode` 优先级与 `cn_holiday_shown` 门）、天气图标三张表
+   **每月各扫一遍**，按日装配零查表。boot 三个 eval epoch 的 `[E]` 由 3 → **0**。
+2. **AI 改期回调崩溃（评审点②漏网）**：`ai_verify()` 对模型输出的 number 误调 `.to_f64()`
+   （rc.6 的 `parse_json` 已把 JSON integer 解析为 number），「请模型给方案」回调必崩。
+   改为直取 number；排程 schema 的 `pattern` 字段（rc.6 不支持）此前已删，保持不变。
+3. **AI 排程可选字段崩溃**：宿主构造的 `model.complete` 输出对象**读缺失键直接抛**
+   `property not found`——模型对可选字段会真省（如「一小时」无提醒需求 → 省 `reminder_minutes`）。
+   修复：`reminder_minutes` / `participants` / `location` 列入 schema `required`，
+   缺失即走 `!r.is_ok` 的干净失败路，不再炸回调；提示词补 location 指引。
+4. **AI 超时**：`AI_TIMEOUT_SEC` 12s → 30s（Minimax 改期任务实测 12–15s，方案不再被误判「无响应」）。
+5. **mail 契约（评审点③）**：① `mail.list` 先经 `mail.accounts` 取 `r.data[0].id`（此前直传导致
+   "There is no such account"）；② 发件人字段名 `from` → `sender`；③ mail.list 消息无 `date` 字段，
+   改传空串回退主题解析。
+6. **邮件预览数据安全**：`add_mail_preview()` 在 `merged` 为空时只 push 邮件事件，而
+   `confirm_import()` 是 `events = merged` **全量替换**——点「写入」会把事件库冲成只剩这一条。
+   修复：先以事件库为底逐条拷入再追加，与 ICS 导入合并语义对齐。
+7. **Splash 引擎适配**：正则不支持 `\s`（全库仅此两处）；`.exec()` 捕获分组拿不到 →
+   邮件日期/时间解析弃用 regex，改 `to_chars()` **码点扫描**（与 ICS 解析同款原语）；
+   `ok` 是保留字不能当变量名。
+8. **字段完整性**：`reschedule()` 重建字面量写齐 `d8*` 七字段（writepoint 门禁④，不再只靠
+   `event_finish` 事后补）；`save_new()` 补 `event_finish(ev)`（v0.5.9 起漏调，手工事件在
+   月历热度 / 圆点 / 「最近日程」里全隐身）；重复事件**原发日**不再被「精确 + 展开」双重计数。
+9. **工程治理**：`ipart`/`pad2` 定义挪到 `d8_*` 之前（建树前向引用清零）；
+   关于页版本号与 manifest 单源（`version_gate` 绿）；测试夹具 `featflow.py` 兼容数组化数据表；
+   rc.6 日志落点改为 `.runtime/`（可移植性门禁绿）；新增 `tools/run_e2e_rc6.sh`（官方宿主 E2E）。
+
+**验证结果（全部实机）**：
+
+| 宿主 | 结果 |
+| --- | --- |
+| card-host 全量回归（`run_all.sh` 9 套件串行） | **9/9 PASS**（静态 14 道门禁全绿） |
+| 官方 OctoSense 0.1.0-rc.6 桌面宿主 E2E（`run_e2e_rc6.sh`） | **10/11**，`[E]` = **0** |
+| rc.6 boot 指令预算（3 个 eval epoch 含天气 re-eval） | **[E] = 0** |
+| rc.6 AI 排程（Minimax `model.complete`） | 草稿 → 确认 → 写入全通，含原必崩用例 |
+| rc.6 AI 改期（冲突 → 请模型给方案） | 回调 + 七道闸正常，过闸方案正常构建 |
+| rc.6 邮件全链（真实 Gmail 账户） | accounts → list → 候选 → 预览 → 写入全通 |
+
+> rc.6 套件唯一的一红是「翻月未稳定」：官方桌面宿主对 `animating=true` 的卡片**每帧连续重绘**，
+> 测试夹具「连续 0.3s 帧指纹一致」的判稳条件在此环境天然不成立（同一断言在 card-host 上通过）。
+> 翻月本身功能正确（月份、节日标记、天气图标、补班字全部实测到位）——**非应用缺陷**。
+
+**不变式**：`reschedule()` 唯一写入点、七道闸判定逐字未动（`test_ai_gates.py --sync` 通过）、
+ICS 往返 `新增 0 / 改期 0 / 跳过 N` 仍成立、全天事件仍不参与自动改期、
+权限声明（`storage` + `net` 两域 + `model` + `mail`）零新增。
+
+---
+
 ## v0.5.3 更新日志（gap-fill 分支）
 
 本版补齐官方 7 段指南中第 04 / 05 / 07 段缺失的能力，同时保持 ICS 往返完整性与单一写入点不变。
@@ -912,9 +974,10 @@ Windows 上天气与城市选择拿不到数据 —— 那是**宿主网络层�
 ③ 从 GitHub Release 下载的 zip 解包 ④ 对解包件跑 `hub check` → **PASSED**
 ⑤ zip sha256 本地与远端下载件一致。①②③ 的 digest 与 signature 完全相同。
 
-**已知未验证**：`model.complete` 的**成功路径**尚未验证 —— 本机 `card-host`
-不注册该服务（实测 `host.request` 既不立刻失败也不触发回调），
-真机验证需本版本先入商店。已能持续验证的是七道闸判定逻辑，做成了常驻门禁
+**`model.complete` 成功路径：v0.5.21 起已实机验证**（2026-10-21，官方 OctoSense
+0.1.0-rc.6 桌面宿主 + Minimax `MiniMax-M3.1-Flash`）：AI 排程「输入自然语言 → 草稿 →
+确认 → 写入事件库」全通；AI 改期「请模型给方案 → 七道闸 → 过闸方案正常构建」全通。
+此前只能本地验证的部分（七道闸判定逻辑）仍保留为常驻门禁
 （`tools/test_ai_gates.py`，38 条用例；`--sync` 会把13 条拒绝理由与
 `ai_verify` 逐字比对，避免夹具漂移成假绿）。
 

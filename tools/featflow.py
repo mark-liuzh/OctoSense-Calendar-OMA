@@ -177,17 +177,36 @@ def tab(label):
 
 # ── 从源码里读回数据表（用于 E 段交叉校验）────────────────────────────
 def load_flat_table(name):
-    """把 `let NAME = "a" + "b" + ...` 拼成一个扁平串。"""
+    """把数据表拼成旧版扁平串。支持两种源形态：
+    1. 旧版字符串链 `let NAME = "a" + "b" + ...` → 直接首尾相接；
+    2. 数组字面量 `let NAME_ARR = [ "a", "b", ... ]`（2026-10 数组化重构后的形态）
+       → `"|".join(arr)`。数组首元素是空串的表（SOLAR_TERMS/HISTORY）正好还原
+       旧版的 leading pipe；CN_SPANS/CHINA_FIXED/INTL_FIXED 旧版无前导竖线，数组
+       首元素就是数据，join 后自然一致。"""
     lines = open(SPLASH, encoding="utf-8").read().split("\n")
     start = None
+    is_arr = False
     for k, l in enumerate(lines):
-        if l.strip().startswith("let %s =" % name):
+        ls = l.strip()
+        if ls.startswith("let %s =" % name):
             start = k
+            break
+        if ls.startswith("let %s_ARR =" % name):
+            start = k
+            is_arr = True
             break
     if start is None:
         return ""
     parts = []
     k = start
+    if is_arr:
+        while k < len(lines):
+            line = lines[k]
+            parts += re.findall(r'"((?:[^"\\]|\\.)*)"', line)
+            if "]" in line:
+                break
+            k += 1
+        return "|".join(parts)
     while k < len(lines):
         line = lines[k].strip()
         if k > start and not line.startswith("+"):
